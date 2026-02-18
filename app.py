@@ -137,13 +137,13 @@ st.markdown("""
 
 # --- 3. 核心功能函式 ---
 
-# [已更新 v3] 浮水印小幫手：縮小版直式 Logo + 緊湊圓形背景
-def add_watermark(frame, logo_path="KUANGYU_logo_v.png", position="bottom_center", margin=30, scale=0.08, bg_padding=5):
+# [已更新 v4] 浮水印小幫手：右下角 + 極致緊湊圓形背景
+def add_watermark(frame, logo_path="KUANGYU_logo_v.png", position="bottom_right", margin=20, scale=0.08, bg_padding=2):
     """
-    讀取本地直式 Logo，加上緊湊的白色圓形背景後疊加到影片上。
-    scale: 縮小至影片寬度的 8% (原來的 2/3 大小)
-    bg_padding: 圓形背景的額外邊距 (縮小至 5px，緊貼 Logo)
-    margin: 離底部的距離 (稍微調整為 30)
+    讀取本地直式 Logo，加上極致緊湊的白色圓形背景後疊加到影片右下角。
+    position: 預設改為 "bottom_right"
+    margin: 離角落邊緣的距離 (稍微縮小至 20 以貼合角落)
+    bg_padding: 圓形背景的額外邊距 (縮小至 2px，極致緊貼)
     """
     if not os.path.exists(logo_path):
         return frame
@@ -167,11 +167,15 @@ def add_watermark(frame, logo_path="KUANGYU_logo_v.png", position="bottom_center
         return frame
 
     # --- 決定位置 (計算 Logo 左上角座標) ---
-    if position == "bottom_center":
+    if position == "bottom_right":
+        x_offset = frame_w - new_width - margin
+        y_offset = frame_h - new_height - margin
+    elif position == "bottom_center":
         x_offset = (frame_w - new_width) // 2
         y_offset = frame_h - new_height - margin
     else:
-        x_offset = (frame_w - new_width) // 2
+        # 預設 bottom_right
+        x_offset = frame_w - new_width - margin
         y_offset = frame_h - new_height - margin
 
     # 邊界檢查
@@ -183,7 +187,7 @@ def add_watermark(frame, logo_path="KUANGYU_logo_v.png", position="bottom_center
     if new_width <= 0 or new_height <= 0: return frame
     logo = logo[:new_height, :new_width]
 
-    # --- [更新步驟] 繪製緊湊的白色圓形背景 ---
+    # --- [更新步驟] 繪製極致緊湊的白色圓形背景 ---
     # 1. 計算 Logo 中心點
     center_x = x_offset + new_width // 2
     center_y = y_offset + new_height // 2
@@ -456,8 +460,8 @@ if uploaded_file:
                                     pts = pts.reshape((-1, 1, 2))
                                     cv2.polylines(frame, [pts], False, color, LINE_THICKNESS, cv2.LINE_AA)
 
-                # [已更新 v3] 呼叫新的圓形浮水印函式 (scale=0.08 縮小)
-                frame = add_watermark(frame, logo_path="KUANGYU_logo_v.png", position="bottom_center", scale=0.08)
+                # [已更新 v4] 呼叫新的圓形浮水印函式 (位置:右下角)
+                frame = add_watermark(frame, logo_path="KUANGYU_logo_v.png", position="bottom_right", scale=0.08)
 
                 out.write(frame)
                 frame_idx += 1
