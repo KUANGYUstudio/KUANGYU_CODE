@@ -131,6 +131,17 @@ st.markdown("""
         padding-left: 10px;
         display: block;
     }
+    
+    .mobile-tip {
+        font-size: 14px;
+        color: #666;
+        background-color: #f0f2f6;
+        padding: 10px;
+        border-radius: 8px;
+        margin-top: 10px;
+        text-align: center;
+        border: 1px solid #ddd;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -158,7 +169,7 @@ def add_watermark(frame, logo_path="KUANGYU_logo_v.png", bg_padding=0):
     1. 自動裁切 Logo 白邊
     2. 智慧縮放: 電腦5% / 手機10%
     3. 安全邊距: 係數 0.85
-    4. [新功能] 背景圓圈改為 50% 半透明
+    4. 背景圓圈改為 50% 半透明
     """
     if not os.path.exists(logo_path):
         return frame
@@ -209,7 +220,7 @@ def add_watermark(frame, logo_path="KUANGYU_logo_v.png", bg_padding=0):
     diagonal = np.sqrt(new_width**2 + new_height**2)
     radius = int(diagonal / 2) + bg_padding
     
-    # [新功能] 繪製 50% 半透明白色圓底
+    # 繪製 50% 半透明白色圓底
     overlay = frame.copy()
     cv2.circle(overlay, (center_x, center_y), radius, (255, 255, 255), -1)
     
@@ -529,16 +540,23 @@ if uploaded_file:
             progress_bar.empty()
             status_text.text("最終壓縮轉檔中...")
             
+            # [v12 手機修復] 加入 -pix_fmt yuv420p 確保 iPhone 相容性
             with st.spinner("製作最終影片 (H.264)..."):
                 subprocess.call([
                     'ffmpeg', '-y', '-i', tfile_output_avi, 
-                    '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '25',
+                    '-c:v', 'libx264', 
+                    '-pix_fmt', 'yuv420p', 
+                    '-preset', 'ultrafast', '-crf', '25',
                     output_video_path
                 ])
             status_text.empty()
             
             st.success("分析完成")
             st.video(output_video_path)
+            
+            # [v12 手機修復] 增加手機下載提示
+            st.markdown("<div class='mobile-tip'>📱 手機版若無法下載，請點擊上方影片播放器右下角「⋮」或長按按鈕選擇「分享 / 下載」</div>", unsafe_allow_html=True)
+
             with open(output_video_path, 'rb') as f:
                 video_bytes = f.read()
             st.download_button("下載影片", video_bytes, "kuangyu_analysis.mp4", "video/mp4", type="primary", use_container_width=True)
