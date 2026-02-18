@@ -137,13 +137,14 @@ st.markdown("""
 
 # --- 3. 核心功能函式 ---
 
-# [已更新 v4] 浮水印小幫手：右下角 + 極致緊湊圓形背景
-def add_watermark(frame, logo_path="KUANGYU_logo_v.png", position="bottom_right", margin=20, scale=0.08, bg_padding=2):
+# [已更新 v5] 浮水印小幫手：右下角 + 更小整體 + 極致緊貼圓圈 + 增加邊距
+def add_watermark(frame, logo_path="KUANGYU_logo_v.png", position="bottom_right", margin=40, scale=0.07, bg_padding=1):
     """
     讀取本地直式 Logo，加上極致緊湊的白色圓形背景後疊加到影片右下角。
-    position: 預設改為 "bottom_right"
-    margin: 離角落邊緣的距離 (稍微縮小至 20 以貼合角落)
-    bg_padding: 圓形背景的額外邊距 (縮小至 2px，極致緊貼)
+    position: "bottom_right"
+    margin: 離角落邊緣的距離 (增加至 40，留出呼吸空間)
+    scale: 整體縮小至 7%
+    bg_padding: 圓形背景的額外邊距 (縮小至 1px，極致緊貼)
     """
     if not os.path.exists(logo_path):
         return frame
@@ -460,8 +461,8 @@ if uploaded_file:
                                     pts = pts.reshape((-1, 1, 2))
                                     cv2.polylines(frame, [pts], False, color, LINE_THICKNESS, cv2.LINE_AA)
 
-                # [已更新 v4] 呼叫新的圓形浮水印函式 (位置:右下角)
-                frame = add_watermark(frame, logo_path="KUANGYU_logo_v.png", position="bottom_right", scale=0.08)
+                # [已更新 v5] 呼叫新的圓形浮水印函式 (更小、更緊、有邊距)
+                frame = add_watermark(frame, logo_path="KUANGYU_logo_v.png", position="bottom_right", scale=0.07, margin=40)
 
                 out.write(frame)
                 frame_idx += 1
