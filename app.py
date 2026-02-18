@@ -1,4 +1,3 @@
-
 import streamlit as st
 import cv2
 import mediapipe as mp
@@ -10,17 +9,10 @@ import subprocess
 
 # --- 0. 核心常數設定 (視覺微調版 v17.3) ---
 # OpenCV 色彩格式為 BGR.
-# 這裡將原本的 HEX 色號進行了飽和度與紮實度的增強，解決「看起來透明」的問題。
-
-# 關節點點 (更紮實的粉紫)
-DOT_COLOR = (180, 100, 240) 
-# 左側線條 (更深邃的藍)
-LEFT_LINE_COLOR = (220, 110, 50)
-# 右側線條 (更飽和的金黃)
-RIGHT_LINE_COLOR = (80, 200, 255)
-
-# 骨架連線 (維持不透明純白)
-SKELETON_COLOR = (255, 255, 255)
+DOT_COLOR = (180, 100, 240)        # 關節點點 (紮實粉紫)
+LEFT_LINE_COLOR = (220, 110, 50)   # 左側線條 (深邃藍)
+RIGHT_LINE_COLOR = (80, 200, 255)  # 右側線條 (飽和金黃)
+SKELETON_COLOR = (255, 255, 255)   # 骨架連線 (純白)
 
 # [尺寸鎖定]
 LINE_THICKNESS = 2    # 線條粗細
@@ -143,7 +135,86 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 核心初始化 ---
+# --- 3. 核心功能函式 ---
+
+# [新增] 浮水印小幫手
+def add_watermark(frame, logo_path="KUANGYU_logo.png", position="bottom_center", margin=30, scale=0.2):
+    """
+    讀取本地 Logo 檔案並疊加到影片上
+    position: 支援 "top_right", "bottom_right", "bottom_center"
+    """
+    if not os.path.exists(logo_path):
+        return frame  # 找不到圖就跳過，不報錯
+
+    # 讀取 Logo (保留透明度 Alpha Channel)
+    logo = cv2.imread(logo_path, cv2.IMREAD_UNCHANGED)
+    if logo is None:
+        return frame
+
+    # 取得尺寸
+    frame_h, frame_w = frame.shape[:2]
+    logo_h, logo_w = logo.shape[:2]
+
+    # 計算 Logo 新尺寸 (根據影片寬度縮放)
+    new_width = int(frame_w * scale)
+    new_height = int(logo_h * (new_width / logo_w))
+    
+    try:
+        logo = cv2.resize(logo, (new_width, new_height), interpolation=cv2.INTER_AREA)
+    except:
+        return frame
+
+    # --- 決定位置 (座標計算) ---
+    if position == "top_right":
+        x_offset = frame_w - new_width - margin
+        y_offset = margin
+    elif position == "bottom_right":
+        x_offset = frame_w - new_width - margin
+        y_offset = frame_h - new_height - margin
+    elif position == "bottom_center":  # 正下方置中
+        x_offset = (frame_w - new_width) // 2
+        y_offset = frame_h - new_height - margin
+    else:
+        # 預設
+        x_offset = (frame_w - new_width) // 2
+        y_offset = frame_h - new_height - margin
+
+    # 確保不超出邊界
+    if y_offset < 0: y_offset = 0
+    if x_offset < 0: x_offset = 0
+    
+    # 邊界保護 (防止 Logo 超出畫面導致報錯)
+    if y_offset + new_height > frame_h: new_height = frame_h - y_offset
+    if x_offset + new_width > frame_w: new_width = frame_w - x_offset
+    if new_width <= 0 or new_height <= 0: return frame
+    
+    # 裁切 logo (萬一超出)
+    logo = logo[:new_height, :new_width]
+
+    # --- 疊加圖片 (處理透明度 Alpha Channel) ---
+    if logo.shape[2] == 4:
+        alpha_channel = logo[:, :, 3]
+        rgb_channels = logo[:, :, :3]
+        
+        # 正規化透明度 (0~1)
+        alpha_factor = alpha_channel / 255.0
+        
+        # 取得要貼上的區域 (Region of Interest)
+        roi = frame[y_offset:y_offset+new_height, x_offset:x_offset+new_width]
+        
+        # 開始混合顏色 (Alpha Blending)
+        for c in range(0, 3):
+            roi[:, :, c] = (alpha_factor * rgb_channels[:, :, c] + 
+                            (1.0 - alpha_factor) * roi[:, :, c])
+            
+        # 放回原圖
+        frame[y_offset:y_offset+new_height, x_offset:x_offset+new_width] = roi
+    else:
+        # JPG 沒透明度，直接貼上
+        frame[y_offset:y_offset+new_height, x_offset:x_offset+new_width] = logo
+
+    return frame
+
 @st.cache_resource
 def load_mediapipe():
     return mp.solutions.pose, mp.solutions.drawing_utils
@@ -172,7 +243,6 @@ def draw_dashboard(image, label, angle, x, y, color):
     
     # 數字
     angle_text = f"{int(angle)}"
-    # 使用傳入的顏色(品牌藍或黃)來顯示數字，增加辨識度
     cv2.putText(image, angle_text, (x + 60, y + 5), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2, cv2.LINE_AA)
     
     # 度數圈圈 (白色)
@@ -423,6 +493,9 @@ if uploaded_file:
                                     pts = np.array(points_list, np.int32)
                                     pts = pts.reshape((-1, 1, 2))
                                     cv2.polylines(frame, [pts], False, color, LINE_THICKNESS, cv2.LINE_AA)
+
+                # [新增] 呼叫浮水印函式，自動讀取 KUANGYU_logo.png
+                frame = add_watermark(frame, logo_path="KUANGYU_logo.png", position="bottom_center", scale=0.2)
 
                 out.write(frame)
                 frame_idx += 1
