@@ -154,10 +154,11 @@ def crop_transparent_borders(image):
 
 def add_watermark(frame, logo_path="KUANGYU_logo_v.png", bg_padding=0):
     """
-    [v10 定稿版] 浮水印小幫手
+    [v11 最終定稿版] 浮水印小幫手
     1. 自動裁切 Logo 白邊
     2. 智慧縮放: 電腦5% / 手機10%
     3. 安全邊距: 係數 0.85
+    4. [新功能] 背景圓圈改為 50% 半透明
     """
     if not os.path.exists(logo_path):
         return frame
@@ -203,15 +204,19 @@ def add_watermark(frame, logo_path="KUANGYU_logo_v.png", bg_padding=0):
     
     # --- 開始繪圖 ---
     
-    # 畫白色圓底
     center_x = x_offset + new_width // 2
     center_y = y_offset + new_height // 2
     diagonal = np.sqrt(new_width**2 + new_height**2)
     radius = int(diagonal / 2) + bg_padding
     
-    cv2.circle(frame, (center_x, center_y), radius, (255, 255, 255), -1)
+    # [新功能] 繪製 50% 半透明白色圓底
+    overlay = frame.copy()
+    cv2.circle(overlay, (center_x, center_y), radius, (255, 255, 255), -1)
+    
+    opacity = 0.5  # 透明度設定
+    cv2.addWeighted(overlay, opacity, frame, 1 - opacity, 0, frame)
 
-    # 疊加 Logo
+    # 疊加 Logo (Logo 本身保持不透明，這樣才清楚)
     if logo.shape[2] == 4:
         alpha = logo[:, :, 3] / 255.0
         
@@ -429,6 +434,7 @@ if uploaded_file:
             out = cv2.VideoWriter(tfile_output_avi, fourcc, meta['fps'], (meta['width'], meta['height']))
             cap = cv2.VideoCapture(st.session_state['source_video_path'])
             
+            # --- 顯示數據儀表板的位置 (可以根據需要微調) ---
             dashboard_positions = {
                 "L-Hip": (20, 100), "L-Knee": (20, 160), "L-Ankle": (20, 220),
                 "R-Hip": (meta['width'] - 200, 100), "R-Knee": (meta['width'] - 200, 160), "R-Ankle": (meta['width'] - 200, 220)
@@ -508,7 +514,7 @@ if uploaded_file:
                                     pts = pts.reshape((-1, 1, 2))
                                     cv2.polylines(frame, [pts], False, color, LINE_THICKNESS, cv2.LINE_AA)
 
-                # [v10 定稿] 呼叫浮水印函式 (智慧縮放 + 安全邊距 0.85)
+                # [v11 定稿版] 呼叫浮水印函式 (智慧縮放 + 安全邊距 0.85 + 50%透明圓底)
                 frame = add_watermark(frame, logo_path="KUANGYU_logo_v.png", bg_padding=0)
 
                 out.write(frame)
