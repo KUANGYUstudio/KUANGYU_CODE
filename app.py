@@ -137,12 +137,13 @@ st.markdown("""
 
 # --- 3. 核心功能函式 ---
 
-# [已更新] 浮水印小幫手：增加白底背景與縮小
-def add_watermark(frame, logo_path="KUANGYU_logo.png", position="bottom_center", margin=30, scale=0.15, bg_padding=10):
+# [已更新 v2] 浮水印小幫手：直式 Logo + 白色圓形背景
+def add_watermark(frame, logo_path="KUANGYU_logo_v.png", position="bottom_center", margin=40, scale=0.12, bg_padding=20):
     """
-    讀取本地 Logo，加上白色背景後疊加到影片上。
-    scale: Logo 寬度佔影片寬度的比例 (預設縮小至 15%)
-    bg_padding: Logo 與白底邊框的距離
+    讀取本地直式 Logo，加上白色圓形背景後疊加到影片上。
+    scale: 直式 Logo 建議稍微縮小一點 (預設 12%)
+    bg_padding: 圓形背景的額外半徑大小
+    margin: 離底部的距離，圓形需要多一點空間，預設加大到 40
     """
     if not os.path.exists(logo_path):
         return frame
@@ -165,35 +166,37 @@ def add_watermark(frame, logo_path="KUANGYU_logo.png", position="bottom_center",
     except:
         return frame
 
-    # --- 決定位置 (座標計算) ---
-    # 這裡計算的是 "Logo 本體" 的左上角座標
+    # --- 決定位置 (計算 Logo 左上角座標) ---
     if position == "bottom_center":
         x_offset = (frame_w - new_width) // 2
         y_offset = frame_h - new_height - margin
     else:
-        # 預設為 bottom_center
+        # 預設 bottom_center
         x_offset = (frame_w - new_width) // 2
         y_offset = frame_h - new_height - margin
 
     # 邊界檢查
-    if y_offset < bg_padding: y_offset = bg_padding
-    if x_offset < bg_padding: x_offset = bg_padding
-    if y_offset + new_height + bg_padding > frame_h: new_height = frame_h - y_offset - bg_padding
-    if x_offset + new_width + bg_padding > frame_w: new_width = frame_w - x_offset - bg_padding
+    if y_offset < 0: y_offset = 0
+    if x_offset < 0: x_offset = 0
+    if y_offset + new_height > frame_h: new_height = frame_h - y_offset
+    if x_offset + new_width > frame_w: new_width = frame_w - x_offset
     
     if new_width <= 0 or new_height <= 0: return frame
     logo = logo[:new_height, :new_width]
 
-    # --- [新增步驟] 繪製白色背景 ---
-    # 計算白底的座標 (比 Logo 大一圈)
-    bg_x1 = x_offset - bg_padding
-    bg_y1 = y_offset - bg_padding
-    bg_x2 = x_offset + new_width + bg_padding
-    bg_y2 = y_offset + new_height + bg_padding
+    # --- [新增步驟] 繪製白色圓形背景 ---
+    # 1. 計算 Logo 中心點
+    center_x = x_offset + new_width // 2
+    center_y = y_offset + new_height // 2
     
-    # 畫上白色實心矩形 (BGR: 255,255,255)
-    # 如果想要圓角，OpenCV 處理比較複雜，先用乾淨的矩形標籤
-    cv2.rectangle(frame, (bg_x1, bg_y1), (bg_x2, bg_y2), (255, 255, 255), -1)
+    # 2. 計算圓形半徑 (要能包住矩形 Logo 的四個角，再加一點邊距)
+    # 半徑 = (Logo對角線長度 / 2) + padding
+    diagonal = np.sqrt(new_width**2 + new_height**2)
+    radius = int(diagonal / 2) + bg_padding
+
+    # 3. 畫上白色實心圓 (BGR: 255,255,255, -1 代表填滿)
+    # 這裡不需要太嚴格的邊界檢查，OpenCV 會處理畫出界的部分
+    cv2.circle(frame, (center_x, center_y), radius, (255, 255, 255), -1)
 
     # --- 疊加 Logo 圖片 (處理透明度 Alpha Channel) ---
     if logo.shape[2] == 4:
@@ -201,10 +204,10 @@ def add_watermark(frame, logo_path="KUANGYU_logo.png", position="bottom_center",
         rgb_channels = logo[:, :, :3]
         alpha_factor = alpha_channel / 255.0
         
-        # 取得要貼上的區域 (此時已經是白底了)
+        # 取得要貼上的區域 (此時已經是白底圓了)
         roi = frame[y_offset:y_offset+new_height, x_offset:x_offset+new_width]
         
-        # 開始混合顏色
+        # 開始混合顏色 (Alpha Blending)
         for c in range(0, 3):
             roi[:, :, c] = (alpha_factor * rgb_channels[:, :, c] + 
                             (1.0 - alpha_factor) * roi[:, :, c])
@@ -461,8 +464,8 @@ if uploaded_file:
                                     pts = pts.reshape((-1, 1, 2))
                                     cv2.polylines(frame, [pts], False, color, LINE_THICKNESS, cv2.LINE_AA)
 
-                # [已更新] 呼叫浮水印函式 (scale=0.15 縮小, 內建白底)
-                frame = add_watermark(frame, logo_path="KUANGYU_logo.png", position="bottom_center", scale=0.15)
+                # [已更新] 呼叫新的圓形浮水印函式 (記得確認檔案名稱是 KUANGYU_logo_v.png)
+                frame = add_watermark(frame, logo_path="KUANGYU_logo_v.png", position="bottom_center", scale=0.12)
 
                 out.write(frame)
                 frame_idx += 1
