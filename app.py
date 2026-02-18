@@ -137,72 +137,75 @@ st.markdown("""
 
 # --- 3. 核心功能函式 ---
 
-# [已更新 v6] 浮水印小幫手：黃金點定位 + 完美比例
-def add_watermark(frame, logo_path="KUANGYU_logo_v.png", scale=0.07, bg_padding=1):
-    """
-    讀取本地直式 Logo，加上極致緊湊的白色圓形背景。
-    使用比例定位法，將中心點放置在畫面的特定黃金位置。
-    scale: 0.07 (維持精緻小尺寸)
-    bg_padding: 1 (維持極致緊貼圓圈)
-    """
-    if not os.path.exists(logo_path):
-        return frame
+# [補回] 自動裁切透明邊框的小工具
+def crop_transparent_borders(image):
+    if image.shape[2] != 4: return image # 如果沒有透明通道就不裁
+    
+    # 找出所有不透明的像素 (Alpha > 0)
+    alpha_channel = image[:, :, 3]
+    coords = cv2.findNonZero(alpha_channel)
+    if coords is None: return image # 全透明就不裁
+    
+    # 取得最小外接矩形
+    x, y, w, h = cv2.boundingRect(coords)
+    return image[y:y+h, x:x+w]
 
+# [補回 v7] 浮水印小幫手：自動裁切 + 90%定位
+def add_watermark(frame, logo_path="KUANGYU_logo_v.png", scale=0.10, bg_padding=0):
+    """
+    1. 自動裁切 Logo 透明邊，讓圓圈緊貼。
+    2. 定位到畫面右下角 (90%, 90%) 位置。
+    """
+    if not os.path.exists(logo_path): return frame
     logo = cv2.imread(logo_path, cv2.IMREAD_UNCHANGED)
-    if logo is None:
-        return frame
+    if logo is None: return frame
+
+    # --- 步驟 1: 自動裁切多餘白邊 ---
+    logo = crop_transparent_borders(logo)
 
     frame_h, frame_w = frame.shape[:2]
     logo_h, logo_w = logo.shape[:2]
 
-    # 1. 計算 Logo 新尺寸
+    # --- 步驟 2: 計算尺寸 (稍微放大到 10% 讓它清楚一點) ---
     new_width = int(frame_w * scale)
     new_height = int(logo_h * (new_width / logo_w))
     
     try:
         logo = cv2.resize(logo, (new_width, new_height), interpolation=cv2.INTER_AREA)
-    except:
-        return frame
+    except: return frame
 
-    # --- 2. 黃金點定位計算 ---
-    # 目標中心點比例 (根據教練畫的圈圈估算：水平80%, 垂直82%)
-    ratio_x = 0.80
-    ratio_y = 0.82
-    
-    target_center_x = int(frame_w * ratio_x)
-    target_center_y = int(frame_h * ratio_y)
+    # --- 步驟 3: 右下角精準定位 (90% x 90%) ---
+    target_center_x = int(frame_w * 0.90)
+    target_center_y = int(frame_h * 0.90)
 
-    # 回推左上角座標
     x_offset = target_center_x - (new_width // 2)
     y_offset = target_center_y - (new_height // 2)
 
-    # 邊界檢查
+    # 邊界保護
     if y_offset < 0: y_offset = 0
     if x_offset < 0: x_offset = 0
     if y_offset + new_height > frame_h: new_height = frame_h - y_offset
     if x_offset + new_width > frame_w: new_width = frame_w - x_offset
-    
     if new_width <= 0 or new_height <= 0: return frame
+    
     logo = logo[:new_height, :new_width]
 
-    # --- 3. 繪製圓形背景與疊加 ---
-    # 重新計算實際中心點 (以防被邊界裁切)
+    # --- 步驟 4: 繪製極致緊貼的白圈 ---
     center_x = x_offset + new_width // 2
     center_y = y_offset + new_height // 2
     
+    # 計算對角線半徑，bg_padding 設為 0
     diagonal = np.sqrt(new_width**2 + new_height**2)
     radius = int(diagonal / 2) + bg_padding
 
     cv2.circle(frame, (center_x, center_y), radius, (255, 255, 255), -1)
 
+    # --- 步驟 5: 疊加 Logo ---
     if logo.shape[2] == 4:
-        alpha_channel = logo[:, :, 3]
-        rgb_channels = logo[:, :, :3]
-        alpha_factor = alpha_channel / 255.0
+        alpha = logo[:, :, 3] / 255.0
         roi = frame[y_offset:y_offset+new_height, x_offset:x_offset+new_width]
-        for c in range(0, 3):
-            roi[:, :, c] = (alpha_factor * rgb_channels[:, :, c] + 
-                            (1.0 - alpha_factor) * roi[:, :, c])
+        for c in range(3):
+            roi[:, :, c] = (alpha * logo[:, :, c] + (1.0 - alpha) * roi[:, :, c])
         frame[y_offset:y_offset+new_height, x_offset:x_offset+new_width] = roi
     else:
         frame[y_offset:y_offset+new_height, x_offset:x_offset+new_width] = logo
@@ -223,14 +226,23 @@ def calculate_angle(a, b, c):
 
 def draw_dashboard(image, label, angle, x, y, color):
     overlay = image.copy()
+    
+    # 迷你儀表板背景
     box_w = 110
     box_h = 35
     cv2.rectangle(overlay, (x, y - 25), (x + box_w, y + 10), (20, 20, 20), -1) 
+    
     alpha = 0.8
     cv2.addWeighted(overlay, alpha, image, 1 - alpha, 0, image)
+    
+    # 標籤
     cv2.putText(image, f"{label}", (x + 5, y - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (220, 220, 220), 1, cv2.LINE_AA)
+    
+    # 數字
     angle_text = f"{int(angle)}"
     cv2.putText(image, angle_text, (x + 60, y + 5), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2, cv2.LINE_AA)
+    
+    # 度數圈圈 (白色)
     cv2.circle(image, (x + 100, y - 5), 2, (255, 255, 255), 1)
 
 # --- Session State ---
@@ -247,6 +259,7 @@ for part in body_parts:
     if f"t_{part}" not in st.session_state: st.session_state[f"t_{part}"] = False
 
 # --- Main Layout ---
+
 st.markdown("""
     <div class="header-container">
         <p class="header-title">光聿KUANGYU｜AI動作實驗室</p>
@@ -266,6 +279,7 @@ if uploaded_file:
         st.session_state['is_processed'] = False
         st.session_state['analyzed_data'] = []
 
+    # 狀態 A: 尚未分析
     if not st.session_state['is_processed']:
         st.markdown("<br>", unsafe_allow_html=True)
         c1, c2, c3 = st.columns([1, 2, 1])
@@ -311,6 +325,7 @@ if uploaded_file:
                         st.session_state['is_processed'] = True
                         st.rerun()
 
+    # 狀態 B: 分析完成
     else:
         st.markdown("<hr style='margin: 20px 0; border: 0; border-top: 1px solid #eee;'>", unsafe_allow_html=True)
         
@@ -319,12 +334,20 @@ if uploaded_file:
         
         col_video, col_ctrl = st.columns([2, 1])
         
+        # --- Form: 控制面板 ---
         with col_ctrl:
             with st.form("control_panel"):
                 st.markdown("<span class='panel-header'>顯示設定</span>", unsafe_allow_html=True)
-                trail_mode = st.radio("軌跡風格", ["無限疊加 (連續線條)", "漸淡軌跡 (彗星尾巴)"], index=0)
+                
+                trail_mode = st.radio(
+                    "軌跡風格",
+                    ["無限疊加 (連續線條)", "漸淡軌跡 (彗星尾巴)"],
+                    index=0
+                )
+                
                 st.markdown("<br>", unsafe_allow_html=True)
                 
+                # 左側控制項
                 st.markdown("<span class='panel-header' style='border-color: rgb{LEFT_LINE_COLOR};'>左側數據 (Left - Blue)</span>", unsafe_allow_html=True)
                 l_c1, l_c2 = st.columns(2)
                 with l_c1:
@@ -338,6 +361,7 @@ if uploaded_file:
                 
                 st.markdown("<br>", unsafe_allow_html=True)
 
+                # 右側控制項
                 st.markdown("<span class='panel-header' style='border-color: rgb{RIGHT_LINE_COLOR};'>右側數據 (Right - Yellow)</span>", unsafe_allow_html=True)
                 r_c1, r_c2 = st.columns(2)
                 with r_c1:
@@ -350,6 +374,7 @@ if uploaded_file:
                     t_r_ankle = st.checkbox("軌跡", value=st.session_state.get('t_r_ankle', False), key="t_r_ankle_f")
                 
                 st.markdown("<br>", unsafe_allow_html=True)
+                
                 submitted = st.form_submit_button("確認並生成影片", type="primary")
 
                 if submitted:
@@ -360,6 +385,7 @@ if uploaded_file:
                         't_r_hip': t_r_hip, 't_r_knee': t_r_knee, 't_r_ankle': t_r_ankle
                     })
 
+            # 資料庫：使用調色後的品牌常數
             metrics_db = {
                 "l_hip":   ("L-Hip", mp_pose.PoseLandmark.LEFT_SHOULDER, mp_pose.PoseLandmark.LEFT_HIP, mp_pose.PoseLandmark.LEFT_KNEE, LEFT_LINE_COLOR, mp_pose.PoseLandmark.LEFT_HIP),
                 "l_knee":  ("L-Knee", mp_pose.PoseLandmark.LEFT_HIP, mp_pose.PoseLandmark.LEFT_KNEE, mp_pose.PoseLandmark.LEFT_ANKLE, LEFT_LINE_COLOR, mp_pose.PoseLandmark.LEFT_KNEE),
@@ -402,7 +428,7 @@ if uploaded_file:
                 MAX_TRAIL_LENGTH = None 
             else:
                 IS_FADE_MODE = True
-                MAX_TRAIL_LENGTH = 100 
+                MAX_TRAIL_LENGTH = 100 # 設定軌跡長度
 
             while cap.isOpened():
                 ret, frame = cap.read()
@@ -412,6 +438,7 @@ if uploaded_file:
                 current_landmarks = landmarks_data[frame_idx] if frame_idx < len(landmarks_data) else None
                 
                 if current_landmarks:
+                    # [視覺修正] 點點: 紮實粉/2px, 線條: 純白/2px
                     mp_drawing.draw_landmarks(
                         frame, current_landmarks, mp_pose.POSE_CONNECTIONS,
                         mp_drawing.DrawingSpec(color=DOT_COLOR, thickness=DOT_RADIUS, circle_radius=DOT_RADIUS),
@@ -437,26 +464,35 @@ if uploaded_file:
                         if show_trail_flag:
                             px = int(lm[track_idx.value].x * w)
                             py = int(lm[track_idx.value].y * h)
+                            
                             if label not in path_storage: path_storage[label] = []
                             path_storage[label].append((px, py))
+                            
                             points_list = path_storage[label]
+                            
                             if IS_FADE_MODE:
+                                # 彗星模式：真正透明漸層 (addWeighted)
                                 points_list = points_list[-MAX_TRAIL_LENGTH:]
                                 path_storage[label] = points_list
+                                
                                 for i in range(1, len(points_list)):
                                     intensity = i / len(points_list)
-                                    alpha = intensity * 0.8 
+                                    alpha = intensity * 0.8 # 透明度係數
+                                    
+                                    # 建立單層 Overlay 避免重複疊加造成過慢，這裡做單次線段疊加
                                     overlay = frame.copy()
                                     cv2.line(overlay, points_list[i-1], points_list[i], color, LINE_THICKNESS, cv2.LINE_AA)
                                     cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0, frame)
+                            
                             else:
+                                # 無限模式 (實線)
                                 if len(points_list) > 1:
                                     pts = np.array(points_list, np.int32)
                                     pts = pts.reshape((-1, 1, 2))
                                     cv2.polylines(frame, [pts], False, color, LINE_THICKNESS, cv2.LINE_AA)
 
-                # [已更新 v6] 呼叫新的圓形浮水印函式 (黃金點定位版)
-                frame = add_watermark(frame, logo_path="KUANGYU_logo_v.png", scale=0.07, bg_padding=1)
+                # [補回] 呼叫自動裁切 + 精準定位浮水印 (重要！)
+                frame = add_watermark(frame, logo_path="KUANGYU_logo_v.png", scale=0.10, bg_padding=0)
 
                 out.write(frame)
                 frame_idx += 1
