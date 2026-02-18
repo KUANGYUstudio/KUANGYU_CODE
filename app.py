@@ -137,28 +137,25 @@ st.markdown("""
 
 # --- 3. 核心功能函式 ---
 
-# [已更新 v5] 浮水印小幫手：右下角 + 更小整體 + 極致緊貼圓圈 + 增加邊距
-def add_watermark(frame, logo_path="KUANGYU_logo_v.png", position="bottom_right", margin=40, scale=0.07, bg_padding=1):
+# [已更新 v6] 浮水印小幫手：黃金點定位 + 完美比例
+def add_watermark(frame, logo_path="KUANGYU_logo_v.png", scale=0.07, bg_padding=1):
     """
-    讀取本地直式 Logo，加上極致緊湊的白色圓形背景後疊加到影片右下角。
-    position: "bottom_right"
-    margin: 離角落邊緣的距離 (增加至 40，留出呼吸空間)
-    scale: 整體縮小至 7%
-    bg_padding: 圓形背景的額外邊距 (縮小至 1px，極致緊貼)
+    讀取本地直式 Logo，加上極致緊湊的白色圓形背景。
+    使用比例定位法，將中心點放置在畫面的特定黃金位置。
+    scale: 0.07 (維持精緻小尺寸)
+    bg_padding: 1 (維持極致緊貼圓圈)
     """
     if not os.path.exists(logo_path):
         return frame
 
-    # 讀取 Logo (保留透明度 Alpha Channel)
     logo = cv2.imread(logo_path, cv2.IMREAD_UNCHANGED)
     if logo is None:
         return frame
 
-    # 取得尺寸
     frame_h, frame_w = frame.shape[:2]
     logo_h, logo_w = logo.shape[:2]
 
-    # 計算 Logo 新尺寸 (根據影片寬度縮放)
+    # 1. 計算 Logo 新尺寸
     new_width = int(frame_w * scale)
     new_height = int(logo_h * (new_width / logo_w))
     
@@ -167,17 +164,17 @@ def add_watermark(frame, logo_path="KUANGYU_logo_v.png", position="bottom_right"
     except:
         return frame
 
-    # --- 決定位置 (計算 Logo 左上角座標) ---
-    if position == "bottom_right":
-        x_offset = frame_w - new_width - margin
-        y_offset = frame_h - new_height - margin
-    elif position == "bottom_center":
-        x_offset = (frame_w - new_width) // 2
-        y_offset = frame_h - new_height - margin
-    else:
-        # 預設 bottom_right
-        x_offset = frame_w - new_width - margin
-        y_offset = frame_h - new_height - margin
+    # --- 2. 黃金點定位計算 ---
+    # 目標中心點比例 (根據教練畫的圈圈估算：水平80%, 垂直82%)
+    ratio_x = 0.80
+    ratio_y = 0.82
+    
+    target_center_x = int(frame_w * ratio_x)
+    target_center_y = int(frame_h * ratio_y)
+
+    # 回推左上角座標
+    x_offset = target_center_x - (new_width // 2)
+    y_offset = target_center_y - (new_height // 2)
 
     # 邊界檢查
     if y_offset < 0: y_offset = 0
@@ -188,19 +185,16 @@ def add_watermark(frame, logo_path="KUANGYU_logo_v.png", position="bottom_right"
     if new_width <= 0 or new_height <= 0: return frame
     logo = logo[:new_height, :new_width]
 
-    # --- [更新步驟] 繪製極致緊湊的白色圓形背景 ---
-    # 1. 計算 Logo 中心點
+    # --- 3. 繪製圓形背景與疊加 ---
+    # 重新計算實際中心點 (以防被邊界裁切)
     center_x = x_offset + new_width // 2
     center_y = y_offset + new_height // 2
     
-    # 2. 計算圓形半徑 (Logo對角線的一半 + 極小的邊距)
     diagonal = np.sqrt(new_width**2 + new_height**2)
     radius = int(diagonal / 2) + bg_padding
 
-    # 3. 畫上白色實心圓
     cv2.circle(frame, (center_x, center_y), radius, (255, 255, 255), -1)
 
-    # --- 疊加 Logo 圖片 (處理透明度 Alpha Channel) ---
     if logo.shape[2] == 4:
         alpha_channel = logo[:, :, 3]
         rgb_channels = logo[:, :, :3]
@@ -461,8 +455,8 @@ if uploaded_file:
                                     pts = pts.reshape((-1, 1, 2))
                                     cv2.polylines(frame, [pts], False, color, LINE_THICKNESS, cv2.LINE_AA)
 
-                # [已更新 v5] 呼叫新的圓形浮水印函式 (更小、更緊、有邊距)
-                frame = add_watermark(frame, logo_path="KUANGYU_logo_v.png", position="bottom_right", scale=0.07, margin=40)
+                # [已更新 v6] 呼叫新的圓形浮水印函式 (黃金點定位版)
+                frame = add_watermark(frame, logo_path="KUANGYU_logo_v.png", scale=0.07, bg_padding=1)
 
                 out.write(frame)
                 frame_idx += 1
