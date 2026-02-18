@@ -1,3 +1,4 @@
+
 import streamlit as st
 import cv2
 import mediapipe as mp
@@ -7,62 +8,142 @@ import sys
 import os
 import subprocess
 
-# --- 1. 介面設定 (加入 Wide Mode 和 icon) ---
+# --- 0. 核心常數設定 (視覺微調版 v17.3) ---
+# OpenCV 色彩格式為 BGR.
+# 這裡將原本的 HEX 色號進行了飽和度與紮實度的增強，解決「看起來透明」的問題。
+
+# 關節點點 (更紮實的粉紫)
+DOT_COLOR = (180, 100, 240) 
+# 左側線條 (更深邃的藍)
+LEFT_LINE_COLOR = (220, 110, 50)
+# 右側線條 (更飽和的金黃)
+RIGHT_LINE_COLOR = (80, 200, 255)
+
+# 骨架連線 (維持不透明純白)
+SKELETON_COLOR = (255, 255, 255)
+
+# [尺寸鎖定]
+LINE_THICKNESS = 2    # 線條粗細
+DOT_RADIUS = 2        # 點點半徑
+
+# --- 1. 介面設定 ---
 st.set_page_config(
     page_title="光聿KUANGYU - AI 動作實驗室",
-    page_icon="🚴",
+    page_icon=None, 
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed"
 )
 
-# --- 2. CSS 極致美化 (像 App 一樣的質感) ---
+# --- 2. CSS 極致美化 ---
 st.markdown("""
     <style>
-    /* 全局字體優化 */
-    html, body, [class*="css"] {
-        font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
+
+    .stApp {
+        background-color: #F5F7F9;
+        font-family: 'Inter', sans-serif;
     }
-    
-    /* 標題樣式 */
-    h1 {
-        color: #0E1117;
-        font-weight: 700;
-        letter-spacing: -1px;
+
+    .header-container {
+        background-color: #1E1E1E;
+        padding: 1.5rem 2rem;
+        border-radius: 16px;
+        margin-bottom: 20px;
+        color: white;
+        text-align: center;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
     }
-    
-    /* 側邊欄按鈕美化 */
-    div.stButton > button:first-child {
-        border-radius: 8px;
-        font-weight: bold;
+    .header-title {
+        font-size: 1.8rem;
+        font-weight: 800;
+        letter-spacing: 1px;
+        margin: 0;
+    }
+    .header-subtitle {
+        font-size: 0.9rem;
+        color: #A0A0A0;
+        margin-top: 5px;
+        font-weight: 400;
+    }
+
+    .stForm {
+        background-color: white;
+        border-radius: 12px;
+        padding: 20px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.05);
         border: 1px solid #E0E0E0;
     }
     
-    /* 強調主要按鈕 (紅色系，呼應光聿) */
-    div.stButton > button.st-emotion-cache-19rxjzo {
-        border-color: #FF4B4B;
-        color: #FF4B4B;
+    div[data-testid="stFileUploader"] {
+        background-color: #FFFFFF;
+        border: 1px dashed #E0E0E0;
+        border-radius: 12px;
+        padding: 20px;
+        text-align: center;
     }
 
-    /* Checkbox 文字加大，方便手指點擊 */
-    .stCheckbox label {
-        font-size: 16px !important;
+    div.stButton > button {
+        border-radius: 8px;
         font-weight: 600;
-        cursor: pointer;
+        border: none;
+        transition: all 0.2s ease;
+        padding: 0.6rem 1.2rem;
+        font-size: 16px;
     }
     
-    /* 調整列間距，讓介面更緊湊 */
-    div[data-testid="column"] {
-        padding: 2px;
+    button[kind="primaryFormSubmit"] {
+        background: linear-gradient(135deg, #FF4B4B 0%, #D42F2F 100%);
+        color: white;
+        box-shadow: 0 4px 6px rgba(255, 75, 75, 0.2);
+        width: 100%;
+        border: none;
+    }
+    button[kind="primaryFormSubmit"]:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 12px rgba(255, 75, 75, 0.3);
     }
     
-    /* 隱藏預設選單 */
+    div.stButton > button.st-emotion-cache-19rxjzo {
+        background: linear-gradient(135deg, #FF4B4B 0%, #D42F2F 100%);
+        color: white;
+        width: 100%;
+    }
+
+    .stCheckbox label {
+        font-size: 15px !important;
+        font-weight: 600;
+        color: #333;
+    }
+
+    .stRadio label {
+        font-weight: 600;
+        color: #333;
+    }
+
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     header {visibility: hidden;}
+    
+    .stVideo {
+        border-radius: 12px;
+        overflow: hidden;
+        box-shadow: 0 8px 16px rgba(0,0,0,0.1);
+        width: 100%;
+    }
+    
+    .panel-header {
+        font-size: 16px;
+        font-weight: bold;
+        color: #333;
+        margin-bottom: 15px;
+        border-left: 4px solid #FF4B4B;
+        padding-left: 10px;
+        display: block;
+    }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 核心初始化 (快取加速) ---
+# --- 核心初始化 ---
 @st.cache_resource
 def load_mediapipe():
     return mp.solutions.pose, mp.solutions.drawing_utils
@@ -77,67 +158,51 @@ def calculate_angle(a, b, c):
 
 def draw_dashboard(image, label, angle, x, y, color):
     overlay = image.copy()
-    # 半透明黑底，讓數據更清楚
-    cv2.rectangle(overlay, (x, y - 30), (x + 180, y + 15), (20, 20, 20), -1) 
-    alpha = 0.7
+    
+    # 迷你儀表板背景
+    box_w = 110
+    box_h = 35
+    cv2.rectangle(overlay, (x, y - 25), (x + box_w, y + 10), (20, 20, 20), -1) 
+    
+    alpha = 0.8
     cv2.addWeighted(overlay, alpha, image, 1 - alpha, 0, image)
     
-    # 文字美化
-    cv2.putText(image, f"{label}", (x + 10, y), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 1, cv2.LINE_AA)
-    cv2.putText(image, f"{int(angle)}", (x + 110, y + 5), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2, cv2.LINE_AA)
-    cv2.circle(image, (x + 160, y - 5), 4, (255, 255, 255), 1) # 畫一個圓圈代表度數
+    # 標籤
+    cv2.putText(image, f"{label}", (x + 5, y - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (220, 220, 220), 1, cv2.LINE_AA)
+    
+    # 數字
+    angle_text = f"{int(angle)}"
+    # 使用傳入的顏色(品牌藍或黃)來顯示數字，增加辨識度
+    cv2.putText(image, angle_text, (x + 60, y + 5), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2, cv2.LINE_AA)
+    
+    # 度數圈圈 (白色)
+    cv2.circle(image, (x + 100, y - 5), 2, (255, 255, 255), 1)
 
-# --- Session State 初始化 ---
+# --- Session State ---
 if 'analyzed_data' not in st.session_state: st.session_state['analyzed_data'] = [] 
 if 'video_meta' not in st.session_state: st.session_state['video_meta'] = {}
 if 'source_video_path' not in st.session_state: st.session_state['source_video_path'] = None
 if 'current_file_name' not in st.session_state: st.session_state['current_file_name'] = ""
 if 'is_processed' not in st.session_state: st.session_state['is_processed'] = False
-if 'uploader_key' not in st.session_state: st.session_state['uploader_key'] = 0
 
-# --- 初始化部位選擇狀態 (為了做一鍵全選) ---
+# --- 初始化部位 ---
 body_parts = ['l_hip', 'l_knee', 'l_ankle', 'r_hip', 'r_knee', 'r_ankle']
 for part in body_parts:
-    if part not in st.session_state: st.session_state[part] = False # 預設全關
+    if part not in st.session_state: st.session_state[part] = False 
     if f"t_{part}" not in st.session_state: st.session_state[f"t_{part}"] = False
 
-# --- UX 功能函數：一鍵切換 ---
-def toggle_all(state):
-    for part in body_parts:
-        st.session_state[part] = state
-        st.session_state[f"t_{part}"] = state # 連殘影也一起開關
+# --- Main Layout ---
 
-# --- Sidebar 控制中心 ---
-with st.sidebar:
-    st.image("https://cdn-icons-png.flaticon.com/512/2972/2972185.png", width=50) # 加入一個單車小圖示 (可換成工作室Logo)
-    st.title("控制中心")
-    st.markdown("---")
-    
-    uploaded_file = st.file_uploader(
-        "📂 步驟 1: 上傳影片", 
-        type=["mp4", "mov"], 
-        key=f"uploader_{st.session_state['uploader_key']}"
-    )
-    
-    st.markdown("---")
-    
-    # 重新整理按鈕
-    if st.button("🔄 重置 / 上傳新檔", use_container_width=True):
-        st.session_state['is_processed'] = False
-        st.session_state['current_file_name'] = ""
-        st.session_state['analyzed_data'] = []
-        st.session_state['uploader_key'] += 1
-        st.rerun()
-        
-    # [修改 1] 這裡改成全大寫 KUANGYU
-    st.caption("KUANGYU Studio v9.9 UX Pro")
+st.markdown("""
+    <div class="header-container">
+        <p class="header-title">光聿KUANGYU｜AI動作實驗室</p>
+        <p class="header-subtitle">Professional Motion Analysis System</p>
+    </div>
+""", unsafe_allow_html=True)
 
-# --- Main 主畫面 ---
-# [修改 2] 這裡拿掉 emoji，改成指定標題
-st.title("光聿KUANGYU｜AI動作實驗室")
+uploaded_file = st.file_uploader("上傳訓練影片 (MP4/MOV)", type=["mp4", "mov"])
 
 if uploaded_file:
-    # 載入影片
     if uploaded_file.name != st.session_state['current_file_name']:
         tfile = tempfile.NamedTemporaryFile(delete=False)
         tfile.write(uploaded_file.read())
@@ -147,18 +212,16 @@ if uploaded_file:
         st.session_state['is_processed'] = False
         st.session_state['analyzed_data'] = []
 
-    # 狀態 1: 尚未分析 (顯示大按鈕)
+    # 狀態 A: 尚未分析
     if not st.session_state['is_processed']:
-        st.info(f"✅ 已載入影片: {uploaded_file.name}")
-        
-        # 使用 columns 讓按鈕置中或好看一點
+        st.markdown("<br>", unsafe_allow_html=True)
         c1, c2, c3 = st.columns([1, 2, 1])
         with c2:
-            if st.button("🚀 啟動 AI 智能掃描", type="primary", use_container_width=True):
-                with st.spinner("🔍 AI 正在建立 3D 骨架模型..."):
+            if st.button("啟動 AI 智能掃描", type="primary"):
+                with st.spinner("正在建構 3D 骨架模型..."):
                     cap = cv2.VideoCapture(st.session_state['source_video_path'])
                     if not cap.isOpened():
-                        st.error("❌ 影片格式錯誤")
+                        st.error("影片格式錯誤")
                     else:
                         orig_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
                         orig_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
@@ -195,174 +258,194 @@ if uploaded_file:
                         st.session_state['is_processed'] = True
                         st.rerun()
 
-    # 狀態 2: 分析完成，顯示儀表板
+    # 狀態 B: 分析完成
     else:
+        st.markdown("<hr style='margin: 20px 0; border: 0; border-top: 1px solid #eee;'>", unsafe_allow_html=True)
+        
         meta = st.session_state['video_meta']
         landmarks_data = st.session_state['analyzed_data']
         
-        # 左右佈局：左邊是影片，右邊是控制面板 (更符合寬螢幕習慣)
         col_video, col_ctrl = st.columns([2, 1])
         
+        # --- Form: 控制面板 ---
         with col_ctrl:
-            st.markdown("### 🛠 數據與殘影設定")
-            
-            # --- UX 神器：一鍵全選按鈕 ---
-            b1, b2 = st.columns(2)
-            with b1:
-                if st.button("✅ 全選", use_container_width=True):
-                    toggle_all(True)
-                    st.rerun()
-            with b2:
-                if st.button("⬜ 重選", use_container_width=True):
-                    toggle_all(False)
-                    st.rerun()
+            with st.form("control_panel"):
+                st.markdown("<span class='panel-header'>顯示設定</span>", unsafe_allow_html=True)
+                
+                trail_mode = st.radio(
+                    "軌跡風格",
+                    ["無限疊加 (連續線條)", "漸淡軌跡 (彗星尾巴)"],
+                    index=0
+                )
+                
+                st.markdown("<br>", unsafe_allow_html=True)
+                
+                # 左側控制項
+                st.markdown("<span class='panel-header' style='border-color: rgb{LEFT_LINE_COLOR};'>左側數據 (Left - Blue)</span>", unsafe_allow_html=True)
+                l_c1, l_c2 = st.columns(2)
+                with l_c1:
+                    l_hip = st.checkbox("左髖", value=st.session_state.get('l_hip', False))
+                    l_knee = st.checkbox("左膝", value=st.session_state.get('l_knee', True))
+                    l_ankle = st.checkbox("左踝", value=st.session_state.get('l_ankle', False))
+                with l_c2:
+                    t_l_hip = st.checkbox("軌跡", value=st.session_state.get('t_l_hip', False), key="t_l_hip_f")
+                    t_l_knee = st.checkbox("軌跡", value=st.session_state.get('t_l_knee', True), key="t_l_knee_f")
+                    t_l_ankle = st.checkbox("軌跡", value=st.session_state.get('t_l_ankle', False), key="t_l_ankle_f")
+                
+                st.markdown("<br>", unsafe_allow_html=True)
 
-            st.markdown("---")
-            
-            # 使用 Tabs 分頁，讓介面更乾淨
-            tab1, tab2 = st.tabs(["👈 左側數據", "👉 右側數據"])
-            
-            with tab1:
-                lc1, lc2 = st.columns([3, 1])
-                st.session_state['l_hip'] = lc1.checkbox("左髖 (Hip)", value=st.session_state['l_hip'])
-                st.session_state['t_l_hip'] = lc2.checkbox("殘影", value=st.session_state['t_l_hip'], key="k_t_l_hip", disabled=not st.session_state['l_hip'])
+                # 右側控制項
+                st.markdown("<span class='panel-header' style='border-color: rgb{RIGHT_LINE_COLOR};'>右側數據 (Right - Yellow)</span>", unsafe_allow_html=True)
+                r_c1, r_c2 = st.columns(2)
+                with r_c1:
+                    r_hip = st.checkbox("右髖", value=st.session_state.get('r_hip', False))
+                    r_knee = st.checkbox("右膝", value=st.session_state.get('r_knee', True))
+                    r_ankle = st.checkbox("右踝", value=st.session_state.get('r_ankle', False))
+                with r_c2:
+                    t_r_hip = st.checkbox("軌跡", value=st.session_state.get('t_r_hip', False), key="t_r_hip_f")
+                    t_r_knee = st.checkbox("軌跡", value=st.session_state.get('t_r_knee', True), key="t_r_knee_f")
+                    t_r_ankle = st.checkbox("軌跡", value=st.session_state.get('t_r_ankle', False), key="t_r_ankle_f")
+                
+                st.markdown("<br>", unsafe_allow_html=True)
+                
+                submitted = st.form_submit_button("確認並生成影片", type="primary")
 
-                lc3, lc4 = st.columns([3, 1])
-                st.session_state['l_knee'] = lc3.checkbox("左膝 (Knee)", value=st.session_state['l_knee'])
-                st.session_state['t_l_knee'] = lc4.checkbox("殘影", value=st.session_state['t_l_knee'], key="k_t_l_knee", disabled=not st.session_state['l_knee'])
+                if submitted:
+                    st.session_state.update({
+                        'l_hip': l_hip, 'l_knee': l_knee, 'l_ankle': l_ankle,
+                        't_l_hip': t_l_hip, 't_l_knee': t_l_knee, 't_l_ankle': t_l_ankle,
+                        'r_hip': r_hip, 'r_knee': r_knee, 'r_ankle': r_ankle,
+                        't_r_hip': t_r_hip, 't_r_knee': t_r_knee, 't_r_ankle': t_r_ankle
+                    })
 
-                lc5, lc6 = st.columns([3, 1])
-                st.session_state['l_ankle'] = lc5.checkbox("左踝 (Ankle)", value=st.session_state['l_ankle'])
-                st.session_state['t_l_ankle'] = lc6.checkbox("殘影", value=st.session_state['t_l_ankle'], key="k_t_l_ankle", disabled=not st.session_state['l_ankle'])
-
-            with tab2:
-                rc1, rc2 = st.columns([3, 1])
-                st.session_state['r_hip'] = rc1.checkbox("右髖 (Hip)", value=st.session_state['r_hip'])
-                st.session_state['t_r_hip'] = rc2.checkbox("殘影", value=st.session_state['t_r_hip'], key="k_t_r_hip", disabled=not st.session_state['r_hip'])
-
-                rc3, rc4 = st.columns([3, 1])
-                st.session_state['r_knee'] = rc3.checkbox("右膝 (Knee)", value=st.session_state['r_knee'])
-                st.session_state['t_r_knee'] = rc4.checkbox("殘影", value=st.session_state['t_r_knee'], key="k_t_r_knee", disabled=not st.session_state['r_knee'])
-
-                rc5, rc6 = st.columns([3, 1])
-                st.session_state['r_ankle'] = rc5.checkbox("右踝 (Ankle)", value=st.session_state['r_ankle'])
-                st.session_state['t_r_ankle'] = rc6.checkbox("殘影", value=st.session_state['t_r_ankle'], key="k_t_r_ankle", disabled=not st.session_state['r_ankle'])
-
-            # 資料庫對應
+            # 資料庫：使用調色後的品牌常數
             metrics_db = {
-                "l_hip":   ("L-Hip", mp_pose.PoseLandmark.LEFT_SHOULDER, mp_pose.PoseLandmark.LEFT_HIP, mp_pose.PoseLandmark.LEFT_KNEE, (50, 255, 50), mp_pose.PoseLandmark.LEFT_HIP),
-                "l_knee":  ("L-Knee", mp_pose.PoseLandmark.LEFT_HIP, mp_pose.PoseLandmark.LEFT_KNEE, mp_pose.PoseLandmark.LEFT_ANKLE, (50, 255, 50), mp_pose.PoseLandmark.LEFT_KNEE),
-                "l_ankle": ("L-Ankle", mp_pose.PoseLandmark.LEFT_KNEE, mp_pose.PoseLandmark.LEFT_ANKLE, mp_pose.PoseLandmark.LEFT_FOOT_INDEX, (50, 255, 50), mp_pose.PoseLandmark.LEFT_ANKLE),
-                "r_hip":   ("R-Hip", mp_pose.PoseLandmark.RIGHT_SHOULDER, mp_pose.PoseLandmark.RIGHT_HIP, mp_pose.PoseLandmark.RIGHT_KNEE, (255, 255, 50), mp_pose.PoseLandmark.RIGHT_HIP),
-                "r_knee":  ("R-Knee", mp_pose.PoseLandmark.RIGHT_HIP, mp_pose.PoseLandmark.RIGHT_KNEE, mp_pose.PoseLandmark.RIGHT_ANKLE, (255, 255, 50), mp_pose.PoseLandmark.RIGHT_KNEE),
-                "r_ankle": ("R-Ankle", mp_pose.PoseLandmark.RIGHT_KNEE, mp_pose.PoseLandmark.RIGHT_ANKLE, mp_pose.PoseLandmark.RIGHT_FOOT_INDEX, (255, 255, 50), mp_pose.PoseLandmark.RIGHT_ANKLE),
+                "l_hip":   ("L-Hip", mp_pose.PoseLandmark.LEFT_SHOULDER, mp_pose.PoseLandmark.LEFT_HIP, mp_pose.PoseLandmark.LEFT_KNEE, LEFT_LINE_COLOR, mp_pose.PoseLandmark.LEFT_HIP),
+                "l_knee":  ("L-Knee", mp_pose.PoseLandmark.LEFT_HIP, mp_pose.PoseLandmark.LEFT_KNEE, mp_pose.PoseLandmark.LEFT_ANKLE, LEFT_LINE_COLOR, mp_pose.PoseLandmark.LEFT_KNEE),
+                "l_ankle": ("L-Ankle", mp_pose.PoseLandmark.LEFT_KNEE, mp_pose.PoseLandmark.LEFT_ANKLE, mp_pose.PoseLandmark.LEFT_FOOT_INDEX, LEFT_LINE_COLOR, mp_pose.PoseLandmark.LEFT_ANKLE),
+                "r_hip":   ("R-Hip", mp_pose.PoseLandmark.RIGHT_SHOULDER, mp_pose.PoseLandmark.RIGHT_HIP, mp_pose.PoseLandmark.RIGHT_KNEE, RIGHT_LINE_COLOR, mp_pose.PoseLandmark.RIGHT_HIP),
+                "r_knee":  ("R-Knee", mp_pose.PoseLandmark.RIGHT_HIP, mp_pose.PoseLandmark.RIGHT_KNEE, mp_pose.PoseLandmark.RIGHT_ANKLE, RIGHT_LINE_COLOR, mp_pose.PoseLandmark.RIGHT_KNEE),
+                "r_ankle": ("R-Ankle", mp_pose.PoseLandmark.RIGHT_KNEE, mp_pose.PoseLandmark.RIGHT_ANKLE, mp_pose.PoseLandmark.RIGHT_FOOT_INDEX, RIGHT_LINE_COLOR, mp_pose.PoseLandmark.RIGHT_ANKLE),
             }
 
             active_metrics = []
             keys = ['l_hip', 'l_knee', 'l_ankle', 'r_hip', 'r_knee', 'r_ankle']
             for k in keys:
-                if st.session_state[k]:
-                    active_metrics.append(metrics_db[k] + (st.session_state[f"t_{k}"],))
+                if st.session_state.get(k, False):
+                    active_metrics.append(metrics_db[k] + (st.session_state.get(f"t_{k}", False),))
 
-        # --- 影片生成 ---
-        tfile_output_avi = tempfile.NamedTemporaryFile(delete=False, suffix='.avi').name
-        output_video_path = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4').name
-        
-        fourcc = cv2.VideoWriter_fourcc(*'MJPG') 
-        out = cv2.VideoWriter(tfile_output_avi, fourcc, meta['fps'], (meta['width'], meta['height']))
-        cap = cv2.VideoCapture(st.session_state['source_video_path'])
-        
-        w, h = meta['width'], meta['height']
-        total_frames = meta['total_frames']
-        
-        # 儀表板位置調整
-        dashboard_positions = {
-            "L-Hip": (20, 100), "L-Knee": (20, 160), "L-Ankle": (20, 220),
-            "R-Hip": (w - 200, 100), "R-Knee": (w - 200, 160), "R-Ankle": (w - 200, 220)
-        }
-        
-        frame_idx = 0
-        TRAIL_LENGTH = 60 
-        STEP = 2          
-        orig_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        
-        # 顯示即時進度
-        status_text = st.empty()
-        progress_bar = st.progress(0)
-
-        while cap.isOpened():
-            ret, frame = cap.read()
-            if not ret: break
-            if orig_w > 960: frame = cv2.resize(frame, (w, h))
-
-            current_landmarks = landmarks_data[frame_idx] if frame_idx < len(landmarks_data) else None
-            
-            if current_landmarks:
-                mp_drawing.draw_landmarks(
-                    frame, current_landmarks, mp_pose.POSE_CONNECTIONS,
-                    mp_drawing.DrawingSpec(color=(255, 255, 255), thickness=1, circle_radius=1), # 骨架線改細一點，更有質感
-                    mp_drawing.DrawingSpec(color=(200, 200, 200), thickness=1, circle_radius=1)
-                )
-                lm = current_landmarks.landmark
-                
-                # 標題
-                cv2.putText(frame, "LEFT SIDE", (20, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (50, 255, 50), 2, cv2.LINE_AA)
-                cv2.putText(frame, "RIGHT SIDE", (w - 200, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 50), 2, cv2.LINE_AA)
-                
-                for label, idx_a, idx_b, idx_c, color, track_idx, show_trail_flag in active_metrics:
-                    try:
-                        p1 = [lm[idx_a.value].x, lm[idx_a.value].y]
-                        p2 = [lm[idx_b.value].x, lm[idx_b.value].y]
-                        p3 = [lm[idx_c.value].x, lm[idx_c.value].y]
-                        angle = calculate_angle(p1, p2, p3)
-                        
-                        if label in dashboard_positions:
-                            pos_x, pos_y = dashboard_positions[label]
-                            draw_dashboard(frame, label, angle, pos_x, pos_y, color)
-                    except: pass
-                    
-                    if show_trail_flag:
-                        for t in range(STEP, TRAIL_LENGTH, STEP):
-                            prev_idx = frame_idx - t
-                            if prev_idx >= 0:
-                                lm_prev = landmarks_data[prev_idx]
-                                if lm_prev:
-                                    pt = (int(lm_prev.landmark[track_idx.value].x * w), int(lm_prev.landmark[track_idx.value].y * h))
-                                    cv2.circle(frame, pt, 3, color, -1) 
-            out.write(frame)
-            frame_idx += 1
-            if total_frames > 0 and frame_idx % 5 == 0:
-                progress_bar.progress(min(frame_idx / total_frames, 1.0))
-                status_text.text(f"🎨 AI 繪圖運算中: {int(frame_idx/total_frames*100)}%")
-        
-        cap.release()
-        out.release()
-        
-        progress_bar.empty()
-        status_text.text("⚙️ 最終壓縮轉檔中...")
-        
-        with st.spinner("🎬 製作最終影片 (H.264)..."):
-            subprocess.call([
-                'ffmpeg', '-y', '-i', tfile_output_avi, 
-                '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '25',
-                output_video_path
-            ])
-        status_text.empty()
-        
-        # --- 最終結果呈現區 ---
         with col_video:
-            st.success("✨ 分析完成！")
+            tfile_output_avi = tempfile.NamedTemporaryFile(delete=False, suffix='.avi').name
+            output_video_path = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4').name
+            
+            fourcc = cv2.VideoWriter_fourcc(*'MJPG') 
+            out = cv2.VideoWriter(tfile_output_avi, fourcc, meta['fps'], (meta['width'], meta['height']))
+            cap = cv2.VideoCapture(st.session_state['source_video_path'])
+            
+            w, h = meta['width'], meta['height']
+            total_frames = meta['total_frames']
+            orig_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            
+            dashboard_positions = {
+                "L-Hip": (20, 100), "L-Knee": (20, 160), "L-Ankle": (20, 220),
+                "R-Hip": (w - 200, 100), "R-Knee": (w - 200, 160), "R-Ankle": (w - 200, 220)
+            }
+            
+            path_storage = {} 
+            frame_idx = 0
+            status_text = st.empty()
+            progress_bar = st.progress(0)
+
+            if "無限疊加" in trail_mode:
+                IS_FADE_MODE = False
+                MAX_TRAIL_LENGTH = None 
+            else:
+                IS_FADE_MODE = True
+                MAX_TRAIL_LENGTH = 100 # 設定軌跡長度
+
+            while cap.isOpened():
+                ret, frame = cap.read()
+                if not ret: break
+                if orig_w > 960: frame = cv2.resize(frame, (w, h))
+
+                current_landmarks = landmarks_data[frame_idx] if frame_idx < len(landmarks_data) else None
+                
+                if current_landmarks:
+                    # [視覺修正] 點點: 紮實粉/2px, 線條: 純白/2px
+                    mp_drawing.draw_landmarks(
+                        frame, current_landmarks, mp_pose.POSE_CONNECTIONS,
+                        mp_drawing.DrawingSpec(color=DOT_COLOR, thickness=DOT_RADIUS, circle_radius=DOT_RADIUS),
+                        mp_drawing.DrawingSpec(color=SKELETON_COLOR, thickness=LINE_THICKNESS, circle_radius=2)
+                    )
+                    lm = current_landmarks.landmark
+                    
+                    cv2.putText(frame, "LEFT SIDE", (20, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, LEFT_LINE_COLOR, 2, cv2.LINE_AA)
+                    cv2.putText(frame, "RIGHT SIDE", (w - 200, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, RIGHT_LINE_COLOR, 2, cv2.LINE_AA)
+                    
+                    for label, idx_a, idx_b, idx_c, color, track_idx, show_trail_flag in active_metrics:
+                        try:
+                            p1 = [lm[idx_a.value].x, lm[idx_a.value].y]
+                            p2 = [lm[idx_b.value].x, lm[idx_b.value].y]
+                            p3 = [lm[idx_c.value].x, lm[idx_c.value].y]
+                            angle = calculate_angle(p1, p2, p3)
+                            
+                            if label in dashboard_positions:
+                                pos_x, pos_y = dashboard_positions[label]
+                                draw_dashboard(frame, label, angle, pos_x, pos_y, color)
+                        except: pass
+                        
+                        if show_trail_flag:
+                            px = int(lm[track_idx.value].x * w)
+                            py = int(lm[track_idx.value].y * h)
+                            
+                            if label not in path_storage: path_storage[label] = []
+                            path_storage[label].append((px, py))
+                            
+                            points_list = path_storage[label]
+                            
+                            if IS_FADE_MODE:
+                                # 彗星模式：真正透明漸層 (addWeighted)
+                                points_list = points_list[-MAX_TRAIL_LENGTH:]
+                                path_storage[label] = points_list
+                                
+                                for i in range(1, len(points_list)):
+                                    intensity = i / len(points_list)
+                                    alpha = intensity * 0.8 # 透明度係數
+                                    
+                                    # 建立單層 Overlay 避免重複疊加造成過慢，這裡做單次線段疊加
+                                    overlay = frame.copy()
+                                    cv2.line(overlay, points_list[i-1], points_list[i], color, LINE_THICKNESS, cv2.LINE_AA)
+                                    cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0, frame)
+                            
+                            else:
+                                # 無限模式 (實線)
+                                if len(points_list) > 1:
+                                    pts = np.array(points_list, np.int32)
+                                    pts = pts.reshape((-1, 1, 2))
+                                    cv2.polylines(frame, [pts], False, color, LINE_THICKNESS, cv2.LINE_AA)
+
+                out.write(frame)
+                frame_idx += 1
+                if total_frames > 0 and frame_idx % 5 == 0:
+                    progress_bar.progress(min(frame_idx / total_frames, 1.0))
+                    status_text.text(f"AI 繪圖運算中: {int(frame_idx/total_frames*100)}%")
+            
+            cap.release()
+            out.release()
+            
+            progress_bar.empty()
+            status_text.text("最終壓縮轉檔中...")
+            
+            with st.spinner("製作最終影片 (H.264)..."):
+                subprocess.call([
+                    'ffmpeg', '-y', '-i', tfile_output_avi, 
+                    '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '25',
+                    output_video_path
+                ])
+            status_text.empty()
+            
+            st.success("分析完成")
             st.video(output_video_path)
             with open(output_video_path, 'rb') as f:
                 video_bytes = f.read()
-            # 下載按鈕改大一點
-            st.download_button("📥 下載分析影片至手機", video_bytes, "kuangyu_analysis.mp4", "video/mp4", type="primary", use_container_width=True)
-
-else:
-    # 初始歡迎畫面
-    st.markdown("""
-    <div style='text-align: center; color: #888; padding: 50px;'>
-        <h3>👈 請從左側選單上傳訓練影片</h3>
-        <p>支援格式: MP4, MOV (建議長度: 15-30秒)</p>
-    </div>
-    """, unsafe_allow_html=True)
+            st.download_button("下載影片", video_bytes, "kuangyu_analysis.mp4", "video/mp4", type="primary", use_container_width=True)
