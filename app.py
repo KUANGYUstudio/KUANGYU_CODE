@@ -137,14 +137,15 @@ st.markdown("""
 
 # --- 3. 核心功能函式 ---
 
-# [新增] 浮水印小幫手
-def add_watermark(frame, logo_path="KUANGYU_logo.png", position="bottom_center", margin=30, scale=0.2):
+# [已更新] 浮水印小幫手：增加白底背景與縮小
+def add_watermark(frame, logo_path="KUANGYU_logo.png", position="bottom_center", margin=30, scale=0.15, bg_padding=10):
     """
-    讀取本地 Logo 檔案並疊加到影片上
-    position: 支援 "top_right", "bottom_right", "bottom_center"
+    讀取本地 Logo，加上白色背景後疊加到影片上。
+    scale: Logo 寬度佔影片寬度的比例 (預設縮小至 15%)
+    bg_padding: Logo 與白底邊框的距離
     """
     if not os.path.exists(logo_path):
-        return frame  # 找不到圖就跳過，不報錯
+        return frame
 
     # 讀取 Logo (保留透明度 Alpha Channel)
     logo = cv2.imread(logo_path, cv2.IMREAD_UNCHANGED)
@@ -165,52 +166,51 @@ def add_watermark(frame, logo_path="KUANGYU_logo.png", position="bottom_center",
         return frame
 
     # --- 決定位置 (座標計算) ---
-    if position == "top_right":
-        x_offset = frame_w - new_width - margin
-        y_offset = margin
-    elif position == "bottom_right":
-        x_offset = frame_w - new_width - margin
-        y_offset = frame_h - new_height - margin
-    elif position == "bottom_center":  # 正下方置中
+    # 這裡計算的是 "Logo 本體" 的左上角座標
+    if position == "bottom_center":
         x_offset = (frame_w - new_width) // 2
         y_offset = frame_h - new_height - margin
     else:
-        # 預設
+        # 預設為 bottom_center
         x_offset = (frame_w - new_width) // 2
         y_offset = frame_h - new_height - margin
 
-    # 確保不超出邊界
-    if y_offset < 0: y_offset = 0
-    if x_offset < 0: x_offset = 0
+    # 邊界檢查
+    if y_offset < bg_padding: y_offset = bg_padding
+    if x_offset < bg_padding: x_offset = bg_padding
+    if y_offset + new_height + bg_padding > frame_h: new_height = frame_h - y_offset - bg_padding
+    if x_offset + new_width + bg_padding > frame_w: new_width = frame_w - x_offset - bg_padding
     
-    # 邊界保護 (防止 Logo 超出畫面導致報錯)
-    if y_offset + new_height > frame_h: new_height = frame_h - y_offset
-    if x_offset + new_width > frame_w: new_width = frame_w - x_offset
     if new_width <= 0 or new_height <= 0: return frame
-    
-    # 裁切 logo (萬一超出)
     logo = logo[:new_height, :new_width]
 
-    # --- 疊加圖片 (處理透明度 Alpha Channel) ---
+    # --- [新增步驟] 繪製白色背景 ---
+    # 計算白底的座標 (比 Logo 大一圈)
+    bg_x1 = x_offset - bg_padding
+    bg_y1 = y_offset - bg_padding
+    bg_x2 = x_offset + new_width + bg_padding
+    bg_y2 = y_offset + new_height + bg_padding
+    
+    # 畫上白色實心矩形 (BGR: 255,255,255)
+    # 如果想要圓角，OpenCV 處理比較複雜，先用乾淨的矩形標籤
+    cv2.rectangle(frame, (bg_x1, bg_y1), (bg_x2, bg_y2), (255, 255, 255), -1)
+
+    # --- 疊加 Logo 圖片 (處理透明度 Alpha Channel) ---
     if logo.shape[2] == 4:
         alpha_channel = logo[:, :, 3]
         rgb_channels = logo[:, :, :3]
-        
-        # 正規化透明度 (0~1)
         alpha_factor = alpha_channel / 255.0
         
-        # 取得要貼上的區域 (Region of Interest)
+        # 取得要貼上的區域 (此時已經是白底了)
         roi = frame[y_offset:y_offset+new_height, x_offset:x_offset+new_width]
         
-        # 開始混合顏色 (Alpha Blending)
+        # 開始混合顏色
         for c in range(0, 3):
             roi[:, :, c] = (alpha_factor * rgb_channels[:, :, c] + 
                             (1.0 - alpha_factor) * roi[:, :, c])
-            
-        # 放回原圖
+        
         frame[y_offset:y_offset+new_height, x_offset:x_offset+new_width] = roi
     else:
-        # JPG 沒透明度，直接貼上
         frame[y_offset:y_offset+new_height, x_offset:x_offset+new_width] = logo
 
     return frame
@@ -229,23 +229,14 @@ def calculate_angle(a, b, c):
 
 def draw_dashboard(image, label, angle, x, y, color):
     overlay = image.copy()
-    
-    # 迷你儀表板背景
     box_w = 110
     box_h = 35
     cv2.rectangle(overlay, (x, y - 25), (x + box_w, y + 10), (20, 20, 20), -1) 
-    
     alpha = 0.8
     cv2.addWeighted(overlay, alpha, image, 1 - alpha, 0, image)
-    
-    # 標籤
     cv2.putText(image, f"{label}", (x + 5, y - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (220, 220, 220), 1, cv2.LINE_AA)
-    
-    # 數字
     angle_text = f"{int(angle)}"
     cv2.putText(image, angle_text, (x + 60, y + 5), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2, cv2.LINE_AA)
-    
-    # 度數圈圈 (白色)
     cv2.circle(image, (x + 100, y - 5), 2, (255, 255, 255), 1)
 
 # --- Session State ---
@@ -262,7 +253,6 @@ for part in body_parts:
     if f"t_{part}" not in st.session_state: st.session_state[f"t_{part}"] = False
 
 # --- Main Layout ---
-
 st.markdown("""
     <div class="header-container">
         <p class="header-title">光聿KUANGYU｜AI動作實驗室</p>
@@ -282,7 +272,6 @@ if uploaded_file:
         st.session_state['is_processed'] = False
         st.session_state['analyzed_data'] = []
 
-    # 狀態 A: 尚未分析
     if not st.session_state['is_processed']:
         st.markdown("<br>", unsafe_allow_html=True)
         c1, c2, c3 = st.columns([1, 2, 1])
@@ -328,7 +317,6 @@ if uploaded_file:
                         st.session_state['is_processed'] = True
                         st.rerun()
 
-    # 狀態 B: 分析完成
     else:
         st.markdown("<hr style='margin: 20px 0; border: 0; border-top: 1px solid #eee;'>", unsafe_allow_html=True)
         
@@ -337,20 +325,12 @@ if uploaded_file:
         
         col_video, col_ctrl = st.columns([2, 1])
         
-        # --- Form: 控制面板 ---
         with col_ctrl:
             with st.form("control_panel"):
                 st.markdown("<span class='panel-header'>顯示設定</span>", unsafe_allow_html=True)
-                
-                trail_mode = st.radio(
-                    "軌跡風格",
-                    ["無限疊加 (連續線條)", "漸淡軌跡 (彗星尾巴)"],
-                    index=0
-                )
-                
+                trail_mode = st.radio("軌跡風格", ["無限疊加 (連續線條)", "漸淡軌跡 (彗星尾巴)"], index=0)
                 st.markdown("<br>", unsafe_allow_html=True)
                 
-                # 左側控制項
                 st.markdown("<span class='panel-header' style='border-color: rgb{LEFT_LINE_COLOR};'>左側數據 (Left - Blue)</span>", unsafe_allow_html=True)
                 l_c1, l_c2 = st.columns(2)
                 with l_c1:
@@ -364,7 +344,6 @@ if uploaded_file:
                 
                 st.markdown("<br>", unsafe_allow_html=True)
 
-                # 右側控制項
                 st.markdown("<span class='panel-header' style='border-color: rgb{RIGHT_LINE_COLOR};'>右側數據 (Right - Yellow)</span>", unsafe_allow_html=True)
                 r_c1, r_c2 = st.columns(2)
                 with r_c1:
@@ -377,7 +356,6 @@ if uploaded_file:
                     t_r_ankle = st.checkbox("軌跡", value=st.session_state.get('t_r_ankle', False), key="t_r_ankle_f")
                 
                 st.markdown("<br>", unsafe_allow_html=True)
-                
                 submitted = st.form_submit_button("確認並生成影片", type="primary")
 
                 if submitted:
@@ -388,7 +366,6 @@ if uploaded_file:
                         't_r_hip': t_r_hip, 't_r_knee': t_r_knee, 't_r_ankle': t_r_ankle
                     })
 
-            # 資料庫：使用調色後的品牌常數
             metrics_db = {
                 "l_hip":   ("L-Hip", mp_pose.PoseLandmark.LEFT_SHOULDER, mp_pose.PoseLandmark.LEFT_HIP, mp_pose.PoseLandmark.LEFT_KNEE, LEFT_LINE_COLOR, mp_pose.PoseLandmark.LEFT_HIP),
                 "l_knee":  ("L-Knee", mp_pose.PoseLandmark.LEFT_HIP, mp_pose.PoseLandmark.LEFT_KNEE, mp_pose.PoseLandmark.LEFT_ANKLE, LEFT_LINE_COLOR, mp_pose.PoseLandmark.LEFT_KNEE),
@@ -431,7 +408,7 @@ if uploaded_file:
                 MAX_TRAIL_LENGTH = None 
             else:
                 IS_FADE_MODE = True
-                MAX_TRAIL_LENGTH = 100 # 設定軌跡長度
+                MAX_TRAIL_LENGTH = 100 
 
             while cap.isOpened():
                 ret, frame = cap.read()
@@ -441,7 +418,6 @@ if uploaded_file:
                 current_landmarks = landmarks_data[frame_idx] if frame_idx < len(landmarks_data) else None
                 
                 if current_landmarks:
-                    # [視覺修正] 點點: 紮實粉/2px, 線條: 純白/2px
                     mp_drawing.draw_landmarks(
                         frame, current_landmarks, mp_pose.POSE_CONNECTIONS,
                         mp_drawing.DrawingSpec(color=DOT_COLOR, thickness=DOT_RADIUS, circle_radius=DOT_RADIUS),
@@ -467,35 +443,26 @@ if uploaded_file:
                         if show_trail_flag:
                             px = int(lm[track_idx.value].x * w)
                             py = int(lm[track_idx.value].y * h)
-                            
                             if label not in path_storage: path_storage[label] = []
                             path_storage[label].append((px, py))
-                            
                             points_list = path_storage[label]
-                            
                             if IS_FADE_MODE:
-                                # 彗星模式：真正透明漸層 (addWeighted)
                                 points_list = points_list[-MAX_TRAIL_LENGTH:]
                                 path_storage[label] = points_list
-                                
                                 for i in range(1, len(points_list)):
                                     intensity = i / len(points_list)
-                                    alpha = intensity * 0.8 # 透明度係數
-                                    
-                                    # 建立單層 Overlay 避免重複疊加造成過慢，這裡做單次線段疊加
+                                    alpha = intensity * 0.8 
                                     overlay = frame.copy()
                                     cv2.line(overlay, points_list[i-1], points_list[i], color, LINE_THICKNESS, cv2.LINE_AA)
                                     cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0, frame)
-                            
                             else:
-                                # 無限模式 (實線)
                                 if len(points_list) > 1:
                                     pts = np.array(points_list, np.int32)
                                     pts = pts.reshape((-1, 1, 2))
                                     cv2.polylines(frame, [pts], False, color, LINE_THICKNESS, cv2.LINE_AA)
 
-                # [新增] 呼叫浮水印函式，自動讀取 KUANGYU_logo.png
-                frame = add_watermark(frame, logo_path="KUANGYU_logo.png", position="bottom_center", scale=0.2)
+                # [已更新] 呼叫浮水印函式 (scale=0.15 縮小, 內建白底)
+                frame = add_watermark(frame, logo_path="KUANGYU_logo.png", position="bottom_center", scale=0.15)
 
                 out.write(frame)
                 frame_idx += 1
