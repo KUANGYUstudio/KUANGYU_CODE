@@ -7,8 +7,7 @@ import sys
 import os
 import subprocess
 
-# --- 0. 核心常數設定 (視覺微調版 v17.3) ---
-# OpenCV 色彩格式為 BGR.
+# --- 0. 核心常數設定 ---
 DOT_COLOR = (180, 100, 240)        # 關節點點 (紮實粉紫)
 LEFT_LINE_COLOR = (220, 110, 50)   # 左側線條 (深邃藍)
 RIGHT_LINE_COLOR = (80, 200, 255)  # 右側線條 (飽和金黃)
@@ -155,10 +154,10 @@ def crop_transparent_borders(image):
 
 def add_watermark(frame, logo_path="KUANGYU_logo_v.png", bg_padding=0):
     """
-    [v8 智慧版] 浮水印小幫手
+    [v10 定稿版] 浮水印小幫手
     1. 自動裁切 Logo 白邊
-    2. 自動判斷 橫式(電腦)/直式(手機) 來決定大小
-    3. 強制設定 右邊與下面 的距離相等 (Equidistant)
+    2. 智慧縮放: 電腦5% / 手機10%
+    3. 安全邊距: 係數 0.85
     """
     if not os.path.exists(logo_path):
         return frame
@@ -190,13 +189,13 @@ def add_watermark(frame, logo_path="KUANGYU_logo_v.png", bg_padding=0):
     except:
         return frame
 
-    # 3. 等距定位邏輯 (Equidistant Positioning)
-    # 設定邊距為 Logo 寬度的 40% (保持呼吸感，且跟 Logo 大小連動)
-    margin = int(new_width * 0.4)
+    # 3. 安全邊距定位 (Safe Margin 0.85)
+    margin_right = int(new_width * 0.85)
+    margin_bottom = int(new_width * 0.85)
 
-    # 從右下角往回推，確保右邊和下面的距離都是 margin
-    x_offset = frame_w - new_width - margin
-    y_offset = frame_h - new_height - margin
+    # 從右下角往回推
+    x_offset = frame_w - new_width - margin_right
+    y_offset = frame_h - new_height - margin_bottom
 
     # 邊界保護
     if y_offset < 0: y_offset = 0
@@ -430,7 +429,6 @@ if uploaded_file:
             out = cv2.VideoWriter(tfile_output_avi, fourcc, meta['fps'], (meta['width'], meta['height']))
             cap = cv2.VideoCapture(st.session_state['source_video_path'])
             
-            # --- 顯示數據儀表板的位置 (可以根據需要微調) ---
             dashboard_positions = {
                 "L-Hip": (20, 100), "L-Knee": (20, 160), "L-Ankle": (20, 220),
                 "R-Hip": (meta['width'] - 200, 100), "R-Knee": (meta['width'] - 200, 160), "R-Ankle": (meta['width'] - 200, 220)
@@ -510,7 +508,7 @@ if uploaded_file:
                                     pts = pts.reshape((-1, 1, 2))
                                     cv2.polylines(frame, [pts], False, color, LINE_THICKNESS, cv2.LINE_AA)
 
-                # [v8 智慧版] 呼叫浮水印函式 (自動判斷大小與位置)
+                # [v10 定稿] 呼叫浮水印函式 (智慧縮放 + 安全邊距 0.85)
                 frame = add_watermark(frame, logo_path="KUANGYU_logo_v.png", bg_padding=0)
 
                 out.write(frame)
