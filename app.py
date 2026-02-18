@@ -137,76 +137,97 @@ st.markdown("""
 
 # --- 3. 核心功能函式 ---
 
-# [補回] 自動裁切透明邊框的小工具
 def crop_transparent_borders(image):
-    if image.shape[2] != 4: return image # 如果沒有透明通道就不裁
+    """
+    [工具] 自動裁切圖片周圍的透明區域
+    """
+    if image.shape[2] != 4: 
+        return image
     
-    # 找出所有不透明的像素 (Alpha > 0)
     alpha_channel = image[:, :, 3]
     coords = cv2.findNonZero(alpha_channel)
-    if coords is None: return image # 全透明就不裁
     
-    # 取得最小外接矩形
+    if coords is None: 
+        return image
+        
     x, y, w, h = cv2.boundingRect(coords)
     return image[y:y+h, x:x+w]
 
-# [補回 v7] 浮水印小幫手：自動裁切 + 90%定位
-def add_watermark(frame, logo_path="KUANGYU_logo_v.png", scale=0.10, bg_padding=0):
+def add_watermark(frame, logo_path="KUANGYU_logo_v.png", bg_padding=0):
     """
-    1. 自動裁切 Logo 透明邊，讓圓圈緊貼。
-    2. 定位到畫面右下角 (90%, 90%) 位置。
+    [v8 智慧版] 浮水印小幫手
+    1. 自動裁切 Logo 白邊
+    2. 自動判斷 橫式(電腦)/直式(手機) 來決定大小
+    3. 強制設定 右邊與下面 的距離相等 (Equidistant)
     """
-    if not os.path.exists(logo_path): return frame
-    logo = cv2.imread(logo_path, cv2.IMREAD_UNCHANGED)
-    if logo is None: return frame
+    if not os.path.exists(logo_path):
+        return frame
 
-    # --- 步驟 1: 自動裁切多餘白邊 ---
+    logo = cv2.imread(logo_path, cv2.IMREAD_UNCHANGED)
+    if logo is None:
+        return frame
+
+    # 1. 先裁切多餘白邊
     logo = crop_transparent_borders(logo)
 
     frame_h, frame_w = frame.shape[:2]
     logo_h, logo_w = logo.shape[:2]
 
-    # --- 步驟 2: 計算尺寸 (稍微放大到 10% 讓它清楚一點) ---
+    # 2. 智慧縮放邏輯 (Smart Scale)
+    if frame_w > frame_h:
+        # 橫式影片 (電腦版/寬螢幕) -> 縮小一半 (5%)
+        scale = 0.05 
+    else:
+        # 直式影片 (手機版) -> 維持原樣 (10%)
+        scale = 0.10
+
+    # 計算 Logo 新尺寸
     new_width = int(frame_w * scale)
     new_height = int(logo_h * (new_width / logo_w))
     
     try:
         logo = cv2.resize(logo, (new_width, new_height), interpolation=cv2.INTER_AREA)
-    except: return frame
+    except:
+        return frame
 
-    # --- 步驟 3: 右下角精準定位 (90% x 90%) ---
-    target_center_x = int(frame_w * 0.90)
-    target_center_y = int(frame_h * 0.90)
+    # 3. 等距定位邏輯 (Equidistant Positioning)
+    # 設定邊距為 Logo 寬度的 40% (保持呼吸感，且跟 Logo 大小連動)
+    margin = int(new_width * 0.4)
 
-    x_offset = target_center_x - (new_width // 2)
-    y_offset = target_center_y - (new_height // 2)
+    # 從右下角往回推，確保右邊和下面的距離都是 margin
+    x_offset = frame_w - new_width - margin
+    y_offset = frame_h - new_height - margin
 
     # 邊界保護
     if y_offset < 0: y_offset = 0
     if x_offset < 0: x_offset = 0
-    if y_offset + new_height > frame_h: new_height = frame_h - y_offset
-    if x_offset + new_width > frame_w: new_width = frame_w - x_offset
-    if new_width <= 0 or new_height <= 0: return frame
     
-    logo = logo[:new_height, :new_width]
-
-    # --- 步驟 4: 繪製極致緊貼的白圈 ---
+    # --- 開始繪圖 ---
+    
+    # 畫白色圓底
     center_x = x_offset + new_width // 2
     center_y = y_offset + new_height // 2
-    
-    # 計算對角線半徑，bg_padding 設為 0
     diagonal = np.sqrt(new_width**2 + new_height**2)
     radius = int(diagonal / 2) + bg_padding
-
+    
     cv2.circle(frame, (center_x, center_y), radius, (255, 255, 255), -1)
 
-    # --- 步驟 5: 疊加 Logo ---
+    # 疊加 Logo
     if logo.shape[2] == 4:
         alpha = logo[:, :, 3] / 255.0
-        roi = frame[y_offset:y_offset+new_height, x_offset:x_offset+new_width]
+        
+        # 確保 ROI 不超出畫面
+        h_part = min(new_height, frame_h - y_offset)
+        w_part = min(new_width, frame_w - x_offset)
+        
+        roi = frame[y_offset:y_offset+h_part, x_offset:x_offset+w_part]
+        logo_part = logo[:h_part, :w_part]
+        alpha_part = alpha[:h_part, :w_part]
+        
         for c in range(3):
-            roi[:, :, c] = (alpha * logo[:, :, c] + (1.0 - alpha) * roi[:, :, c])
-        frame[y_offset:y_offset+new_height, x_offset:x_offset+new_width] = roi
+            roi[:, :, c] = (alpha_part * logo_part[:, :, c] + (1.0 - alpha_part) * roi[:, :, c])
+            
+        frame[y_offset:y_offset+h_part, x_offset:x_offset+w_part] = roi
     else:
         frame[y_offset:y_offset+new_height, x_offset:x_offset+new_width] = logo
 
@@ -409,13 +430,10 @@ if uploaded_file:
             out = cv2.VideoWriter(tfile_output_avi, fourcc, meta['fps'], (meta['width'], meta['height']))
             cap = cv2.VideoCapture(st.session_state['source_video_path'])
             
-            w, h = meta['width'], meta['height']
-            total_frames = meta['total_frames']
-            orig_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-            
+            # --- 顯示數據儀表板的位置 (可以根據需要微調) ---
             dashboard_positions = {
                 "L-Hip": (20, 100), "L-Knee": (20, 160), "L-Ankle": (20, 220),
-                "R-Hip": (w - 200, 100), "R-Knee": (w - 200, 160), "R-Ankle": (w - 200, 220)
+                "R-Hip": (meta['width'] - 200, 100), "R-Knee": (meta['width'] - 200, 160), "R-Ankle": (meta['width'] - 200, 220)
             }
             
             path_storage = {} 
@@ -433,7 +451,10 @@ if uploaded_file:
             while cap.isOpened():
                 ret, frame = cap.read()
                 if not ret: break
-                if orig_w > 960: frame = cv2.resize(frame, (w, h))
+                
+                # 統一縮放
+                if int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)) > 960: 
+                    frame = cv2.resize(frame, (meta['width'], meta['height']))
 
                 current_landmarks = landmarks_data[frame_idx] if frame_idx < len(landmarks_data) else None
                 
@@ -447,7 +468,7 @@ if uploaded_file:
                     lm = current_landmarks.landmark
                     
                     cv2.putText(frame, "LEFT SIDE", (20, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, LEFT_LINE_COLOR, 2, cv2.LINE_AA)
-                    cv2.putText(frame, "RIGHT SIDE", (w - 200, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, RIGHT_LINE_COLOR, 2, cv2.LINE_AA)
+                    cv2.putText(frame, "RIGHT SIDE", (meta['width'] - 200, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, RIGHT_LINE_COLOR, 2, cv2.LINE_AA)
                     
                     for label, idx_a, idx_b, idx_c, color, track_idx, show_trail_flag in active_metrics:
                         try:
@@ -462,8 +483,8 @@ if uploaded_file:
                         except: pass
                         
                         if show_trail_flag:
-                            px = int(lm[track_idx.value].x * w)
-                            py = int(lm[track_idx.value].y * h)
+                            px = int(lm[track_idx.value].x * meta['width'])
+                            py = int(lm[track_idx.value].y * meta['height'])
                             
                             if label not in path_storage: path_storage[label] = []
                             path_storage[label].append((px, py))
@@ -471,34 +492,32 @@ if uploaded_file:
                             points_list = path_storage[label]
                             
                             if IS_FADE_MODE:
-                                # 彗星模式：真正透明漸層 (addWeighted)
+                                # 彗星模式
                                 points_list = points_list[-MAX_TRAIL_LENGTH:]
                                 path_storage[label] = points_list
                                 
                                 for i in range(1, len(points_list)):
                                     intensity = i / len(points_list)
-                                    alpha = intensity * 0.8 # 透明度係數
+                                    alpha = intensity * 0.8 
                                     
-                                    # 建立單層 Overlay 避免重複疊加造成過慢，這裡做單次線段疊加
                                     overlay = frame.copy()
                                     cv2.line(overlay, points_list[i-1], points_list[i], color, LINE_THICKNESS, cv2.LINE_AA)
                                     cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0, frame)
-                            
                             else:
-                                # 無限模式 (實線)
+                                # 無限模式
                                 if len(points_list) > 1:
                                     pts = np.array(points_list, np.int32)
                                     pts = pts.reshape((-1, 1, 2))
                                     cv2.polylines(frame, [pts], False, color, LINE_THICKNESS, cv2.LINE_AA)
 
-                # [補回] 呼叫自動裁切 + 精準定位浮水印 (重要！)
-                frame = add_watermark(frame, logo_path="KUANGYU_logo_v.png", scale=0.10, bg_padding=0)
+                # [v8 智慧版] 呼叫浮水印函式 (自動判斷大小與位置)
+                frame = add_watermark(frame, logo_path="KUANGYU_logo_v.png", bg_padding=0)
 
                 out.write(frame)
                 frame_idx += 1
-                if total_frames > 0 and frame_idx % 5 == 0:
-                    progress_bar.progress(min(frame_idx / total_frames, 1.0))
-                    status_text.text(f"AI 繪圖運算中: {int(frame_idx/total_frames*100)}%")
+                if meta['total_frames'] > 0 and frame_idx % 5 == 0:
+                    progress_bar.progress(min(frame_idx / meta['total_frames'], 1.0))
+                    status_text.text(f"AI 繪圖運算中: {int(frame_idx/meta['total_frames']*100)}%")
             
             cap.release()
             out.release()
