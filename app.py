@@ -7,11 +7,11 @@ import sys
 import os
 import subprocess
 
-# --- 0. 核心常數設定 (v14 視覺優化) ---
+# --- 0. 核心常數設定 ---
 # OpenCV 色彩格式為 BGR (藍, 綠, 紅)
-DOT_COLOR = (180, 100, 240)        # 關節點點 (紮實粉紫) - 維持不變
-LEFT_LINE_COLOR = (255, 255, 0)    # [修改] 左側線條改為 (螢光青藍) 以提升對比度
-RIGHT_LINE_COLOR = (80, 200, 255)  # 右側線條 (飽和金黃) - 維持不變
+DOT_COLOR = (180, 100, 240)        # 關節點點 (紮實粉紫)
+LEFT_LINE_COLOR = (255, 255, 0)    # 左側線條 (螢光青藍 Cyan in BGR)
+RIGHT_LINE_COLOR = (80, 200, 255)  # 右側線條 (飽和金黃 Yellow in BGR)
 SKELETON_COLOR = (255, 255, 255)   # 骨架連線 (純白)
 
 # [尺寸鎖定]
@@ -26,21 +26,123 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# --- 2. CSS 美化 ---
+# --- 2. CSS 極致美化 ---
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
-    .stApp { background-color: #F5F7F9; font-family: 'Inter', sans-serif; }
-    .header-container { background-color: #1E1E1E; padding: 1.5rem 2rem; border-radius: 16px; margin-bottom: 20px; color: white; text-align: center; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
-    .header-title { font-size: 1.8rem; font-weight: 800; letter-spacing: 1px; margin: 0; }
-    .header-subtitle { font-size: 0.9rem; color: #A0A0A0; margin-top: 5px; font-weight: 400; }
-    .stForm { background-color: white; border-radius: 12px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); border: 1px solid #E0E0E0; }
-    div[data-testid="stFileUploader"] { background-color: #FFFFFF; border: 1px dashed #E0E0E0; border-radius: 12px; padding: 20px; text-align: center; }
-    div.stButton > button { border-radius: 8px; font-weight: 600; border: none; padding: 0.6rem 1.2rem; font-size: 16px; }
-    button[kind="primaryFormSubmit"] { background: linear-gradient(135deg, #FF4B4B 0%, #D42F2F 100%); color: white; width: 100%; border: none; }
-    .stVideo { border-radius: 12px; overflow: hidden; box-shadow: 0 8px 16px rgba(0,0,0,0.1); width: 100%; }
-    .panel-header { font-size: 16px; font-weight: bold; color: #333; margin-bottom: 15px; border-left: 4px solid #FF4B4B; padding-left: 10px; display: block; }
-    .mobile-tip { font-size: 14px; color: #666; background-color: #f0f2f6; padding: 10px; border-radius: 8px; margin-top: 10px; text-align: center; border: 1px solid #ddd; }
+
+    .stApp {
+        background-color: #F5F7F9;
+        font-family: 'Inter', sans-serif;
+    }
+
+    .header-container {
+        background-color: #1E1E1E;
+        padding: 1.5rem 2rem;
+        border-radius: 16px;
+        margin-bottom: 20px;
+        color: white;
+        text-align: center;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+    .header-title {
+        font-size: 1.8rem;
+        font-weight: 800;
+        letter-spacing: 1px;
+        margin: 0;
+    }
+    .header-subtitle {
+        font-size: 0.9rem;
+        color: #A0A0A0;
+        margin-top: 5px;
+        font-weight: 400;
+    }
+
+    .stForm {
+        background-color: white;
+        border-radius: 12px;
+        padding: 20px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        border: 1px solid #E0E0E0;
+    }
+    
+    div[data-testid="stFileUploader"] {
+        background-color: #FFFFFF;
+        border: 1px dashed #E0E0E0;
+        border-radius: 12px;
+        padding: 20px;
+        text-align: center;
+    }
+
+    div.stButton > button {
+        border-radius: 8px;
+        font-weight: 600;
+        border: none;
+        transition: all 0.2s ease;
+        padding: 0.6rem 1.2rem;
+        font-size: 16px;
+    }
+    
+    button[kind="primaryFormSubmit"] {
+        background: linear-gradient(135deg, #FF4B4B 0%, #D42F2F 100%);
+        color: white;
+        box-shadow: 0 4px 6px rgba(255, 75, 75, 0.2);
+        width: 100%;
+        border: none;
+    }
+    button[kind="primaryFormSubmit"]:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 12px rgba(255, 75, 75, 0.3);
+    }
+    
+    div.stButton > button.st-emotion-cache-19rxjzo {
+        background: linear-gradient(135deg, #FF4B4B 0%, #D42F2F 100%);
+        color: white;
+        width: 100%;
+    }
+
+    .stCheckbox label {
+        font-size: 15px !important;
+        font-weight: 600;
+        color: #333;
+    }
+
+    .stRadio label {
+        font-weight: 600;
+        color: #333;
+    }
+
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
+    
+    .stVideo {
+        border-radius: 12px;
+        overflow: hidden;
+        box-shadow: 0 8px 16px rgba(0,0,0,0.1);
+        width: 100%;
+    }
+    
+    .panel-header {
+        font-size: 16px;
+        font-weight: bold;
+        color: #333;
+        margin-bottom: 15px;
+        border-left: 4px solid #FF4B4B;
+        padding-left: 10px;
+        display: block;
+    }
+    
+    .mobile-tip {
+        font-size: 14px;
+        color: #666;
+        background-color: #f0f2f6;
+        padding: 10px;
+        border-radius: 8px;
+        margin-top: 10px;
+        text-align: center;
+        border: 1px solid #ddd;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -203,7 +305,11 @@ if uploaded_file:
                 trail_mode = st.radio("軌跡風格", ["無限疊加 (連續線條)", "漸淡軌跡 (彗星尾巴)"], index=0)
                 st.markdown("<br>", unsafe_allow_html=True)
                 
-                st.markdown(f"<span class='panel-header' style='border-color: rgb{LEFT_LINE_COLOR};'>左側數據 (Left - Cyan)</span>", unsafe_allow_html=True)
+                # --- [修復重點] CSS 網頁顯示需要 RGB 格式，所以把 BGR 反轉 [::-1] ---
+                left_rgb = LEFT_LINE_COLOR[::-1]
+                right_rgb = RIGHT_LINE_COLOR[::-1]
+
+                st.markdown(f"<span class='panel-header' style='border-color: rgb{left_rgb};'>左側數據 (Left - Cyan)</span>", unsafe_allow_html=True)
                 l_c1, l_c2 = st.columns(2)
                 with l_c1:
                     l_hip = st.checkbox("左髖", value=st.session_state.get('l_hip', False))
@@ -215,7 +321,7 @@ if uploaded_file:
                     t_l_ankle = st.checkbox("軌跡", value=st.session_state.get('t_l_ankle', False), key="t_l_ankle_f")
                 
                 st.markdown("<br>", unsafe_allow_html=True)
-                st.markdown(f"<span class='panel-header' style='border-color: rgb{RIGHT_LINE_COLOR};'>右側數據 (Right - Yellow)</span>", unsafe_allow_html=True)
+                st.markdown(f"<span class='panel-header' style='border-color: rgb{right_rgb};'>右側數據 (Right - Yellow)</span>", unsafe_allow_html=True)
                 r_c1, r_c2 = st.columns(2)
                 with r_c1:
                     r_hip = st.checkbox("右髖", value=st.session_state.get('r_hip', False))
@@ -305,7 +411,6 @@ if uploaded_file:
                                 if len(points_list) > 1:
                                     cv2.polylines(frame, [np.array(points_list, np.int32).reshape((-1, 1, 2))], False, color, LINE_THICKNESS, cv2.LINE_AA)
 
-                # 呼叫浮水印函式 (50%透明圓底)
                 frame = add_watermark(frame, logo_path="KUANGYU_logo_v.png", bg_padding=0)
 
                 out.write(frame)
