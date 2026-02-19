@@ -309,7 +309,7 @@ if uploaded_file:
                 left_rgb = LEFT_LINE_COLOR[::-1]
                 right_rgb = RIGHT_LINE_COLOR[::-1]
 
-                st.markdown(f"<span class='panel-header' style='border-color: rgb{left_rgb};'>左側數據 (Left - Cyan)</span>", unsafe_allow_html=True)
+                st.markdown("<span class='panel-header' style='border-color: #00FFFF;'>左側數據 (Left - Cyan)</span>", unsafe_allow_html=True)
                 l_c1, l_c2 = st.columns(2)
                 with l_c1:
                     l_hip = st.checkbox("左髖", value=st.session_state.get('l_hip', False))
@@ -321,7 +321,7 @@ if uploaded_file:
                     t_l_ankle = st.checkbox("軌跡", value=st.session_state.get('t_l_ankle', False), key="t_l_ankle_f")
                 
                 st.markdown("<br>", unsafe_allow_html=True)
-                st.markdown(f"<span class='panel-header' style='border-color: rgb{right_rgb};'>右側數據 (Right - Yellow)</span>", unsafe_allow_html=True)
+                st.markdown("<span class='panel-header' style='border-color: #FFC850;'>右側數據 (Right - Yellow)</span>", unsafe_allow_html=True)
                 r_c1, r_c2 = st.columns(2)
                 with r_c1:
                     r_hip = st.checkbox("右髖", value=st.session_state.get('r_hip', False))
