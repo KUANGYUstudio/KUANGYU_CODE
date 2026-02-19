@@ -157,9 +157,6 @@ def crop_transparent_borders(image):
     return image[y:y+h, x:x+w]
 
 def create_white_border_sticker(logo_img, border_thickness=5):
-    """
-    [已修復] 為 Logo 加上精緻的白色描邊效果 (解決邊緣被切平問題)
-    """
     h, w = logo_img.shape[:2]
     # 先增加一圈「透明防護罩(Padding)」，確保白邊長大的時候不會超出畫布被切掉
     pad = border_thickness + 2
@@ -167,7 +164,7 @@ def create_white_border_sticker(logo_img, border_thickness=5):
     # 把 Logo 貼在擴大後的畫布正中央
     padded_logo[pad:pad+h, pad:pad+w] = logo_img
 
-    # 1. 準備白邊底圖 (針對加上防護罩後的 Logo 進行操作)
+    # 1. 準備白邊底圖
     alpha = padded_logo[:, :, 3]
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (border_thickness*2+1, border_thickness*2+1))
     dilated_alpha = cv2.dilate(alpha, kernel)
@@ -207,7 +204,7 @@ def add_watermark(frame, logo_path="KUANGYU_logo_v.png"):
     sticker_logo = create_white_border_sticker(logo_resized, border_thickness=border_px)
     sticker_h, sticker_w = sticker_logo.shape[:2]
 
-    # 4. [v19 微調] 安全邊距定位 (縮小係數至 0.2，讓 Logo 更靠近角落)
+    # 4. 安全邊距定位 (0.2)
     margin_right = int(sticker_w * 0.2)
     margin_bottom = int(sticker_w * 0.2)
     x_offset = frame_w - sticker_w - margin_right
@@ -374,9 +371,10 @@ if uploaded_file:
             out = cv2.VideoWriter(tfile_output_avi, cv2.VideoWriter_fourcc(*'MJPG'), meta['fps'], (meta['width'], meta['height']))
             cap = cv2.VideoCapture(st.session_state['source_video_path'])
             
+            # [v20 修復] 右側數據推移，與右邊界距離設定為 135 (對稱左側的20+寬度)
             dashboard_positions = {
                 "L-Hip": (20, 100), "L-Knee": (20, 145), "L-Ankle": (20, 190),
-                "R-Hip": (meta['width'] - 200, 100), "R-Knee": (meta['width'] - 200, 145), "R-Ankle": (meta['width'] - 200, 190)
+                "R-Hip": (meta['width'] - 135, 100), "R-Knee": (meta['width'] - 135, 145), "R-Ankle": (meta['width'] - 135, 190)
             }
             path_storage = {} 
             frame_idx = 0
@@ -401,8 +399,9 @@ if uploaded_file:
                         mp_drawing.DrawingSpec(color=SKELETON_COLOR, thickness=LINE_THICKNESS, circle_radius=2))
                     lm = current_landmarks.landmark
                     
+                    # [v20 修復] 文字 RIGHT SIDE 同步往右推移
                     cv2.putText(frame, "LEFT SIDE", (20, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, LEFT_LINE_COLOR, 2, cv2.LINE_AA)
-                    cv2.putText(frame, "RIGHT SIDE", (meta['width'] - 200, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, RIGHT_LINE_COLOR, 2, cv2.LINE_AA)
+                    cv2.putText(frame, "RIGHT SIDE", (meta['width'] - 135, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, RIGHT_LINE_COLOR, 2, cv2.LINE_AA)
                     
                     for label, idx_a, idx_b, idx_c, color, track_idx, show_trail_flag in active_metrics:
                         try:
@@ -428,7 +427,6 @@ if uploaded_file:
                                 if len(points_list) > 1:
                                     cv2.polylines(frame, [np.array(points_list, np.int32).reshape((-1, 1, 2))], False, color, LINE_THICKNESS, cv2.LINE_AA)
 
-                # [v19] 呼叫浮水印函式 (內部已調整為小邊距)
                 frame = add_watermark(frame, logo_path="KUANGYU_logo_v.png")
 
                 out.write(frame)
