@@ -7,16 +7,24 @@ import sys
 import os
 import subprocess
 
-# --- 0. 核心常數設定 ---
-DOT_COLOR = (180, 100, 240)        # 關節點點
-LEFT_LINE_COLOR = (220, 110, 50)   # 左側線條
-RIGHT_LINE_COLOR = (80, 200, 255)  # 右側線條
-SKELETON_COLOR = (255, 255, 255)   # 骨架連線
-LINE_THICKNESS = 2
-DOT_RADIUS = 2
+# --- 0. 核心常數設定 (v14 視覺優化) ---
+# OpenCV 色彩格式為 BGR (藍, 綠, 紅)
+DOT_COLOR = (180, 100, 240)        # 關節點點 (紮實粉紫) - 維持不變
+LEFT_LINE_COLOR = (255, 255, 0)    # [修改] 左側線條改為 (螢光青藍) 以提升對比度
+RIGHT_LINE_COLOR = (80, 200, 255)  # 右側線條 (飽和金黃) - 維持不變
+SKELETON_COLOR = (255, 255, 255)   # 骨架連線 (純白)
+
+# [尺寸鎖定]
+LINE_THICKNESS = 2    # 線條粗細
+DOT_RADIUS = 2        # 點點半徑
 
 # --- 1. 介面設定 ---
-st.set_page_config(page_title="光聿KUANGYU - AI 動作實驗室", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(
+    page_title="光聿KUANGYU - AI 動作實驗室",
+    page_icon=None, 
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
 
 # --- 2. CSS 美化 ---
 st.markdown("""
@@ -195,7 +203,7 @@ if uploaded_file:
                 trail_mode = st.radio("軌跡風格", ["無限疊加 (連續線條)", "漸淡軌跡 (彗星尾巴)"], index=0)
                 st.markdown("<br>", unsafe_allow_html=True)
                 
-                st.markdown(f"<span class='panel-header' style='border-color: rgb{LEFT_LINE_COLOR};'>左側數據 (Left - Blue)</span>", unsafe_allow_html=True)
+                st.markdown(f"<span class='panel-header' style='border-color: rgb{LEFT_LINE_COLOR};'>左側數據 (Left - Cyan)</span>", unsafe_allow_html=True)
                 l_c1, l_c2 = st.columns(2)
                 with l_c1:
                     l_hip = st.checkbox("左髖", value=st.session_state.get('l_hip', False))
@@ -246,7 +254,7 @@ if uploaded_file:
             out = cv2.VideoWriter(tfile_output_avi, cv2.VideoWriter_fourcc(*'MJPG'), meta['fps'], (meta['width'], meta['height']))
             cap = cv2.VideoCapture(st.session_state['source_video_path'])
             
-            # [v13 修改] 調整 Y 軸位置，間距縮小為 45px (100 -> 145 -> 190)
+            # 儀表板間距縮小為 45px
             dashboard_positions = {
                 "L-Hip": (20, 100), "L-Knee": (20, 145), "L-Ankle": (20, 190),
                 "R-Hip": (meta['width'] - 200, 100), "R-Knee": (meta['width'] - 200, 145), "R-Ankle": (meta['width'] - 200, 190)
@@ -297,6 +305,7 @@ if uploaded_file:
                                 if len(points_list) > 1:
                                     cv2.polylines(frame, [np.array(points_list, np.int32).reshape((-1, 1, 2))], False, color, LINE_THICKNESS, cv2.LINE_AA)
 
+                # 呼叫浮水印函式 (50%透明圓底)
                 frame = add_watermark(frame, logo_path="KUANGYU_logo_v.png", bg_padding=0)
 
                 out.write(frame)
@@ -310,7 +319,7 @@ if uploaded_file:
             progress_bar.empty()
             status_text.text("最終壓縮轉檔中...")
             
-            # [v13 新增] 錯誤捕捉器 + 手機相容轉檔
+            # 錯誤捕捉器 + 手機相容轉檔
             try:
                 subprocess.run(['ffmpeg', '-y', '-i', tfile_output_avi, '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-preset', 'ultrafast', '-crf', '25', output_video_path], check=True, capture_output=True, text=True)
             except subprocess.CalledProcessError as e:
