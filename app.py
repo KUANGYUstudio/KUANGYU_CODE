@@ -156,57 +156,88 @@ def crop_transparent_borders(image):
     x, y, w, h = cv2.boundingRect(coords)
     return image[y:y+h, x:x+w]
 
-def add_watermark(frame, logo_path="KUANGYU_logo_v.png", bg_padding=0):
+def create_white_border_sticker(logo_img, border_thickness=5):
+    """
+    [新功能] 為 Logo 加上精緻的白色描邊效果 (貼紙風)
+    """
+    # 1. 準備白邊底圖
+    alpha = logo_img[:, :, 3]
+    # 使用圓形核心進行膨脹，讓邊緣更圓滑
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (border_thickness*2+1, border_thickness*2+1))
+    dilated_alpha = cv2.dilate(alpha, kernel)
+    
+    # 創建純白底圖
+    border_layer = np.zeros_like(logo_img)
+    border_layer[:] = (255, 255, 255, 255) # BGRA 全白
+    border_layer[:, :, 3] = dilated_alpha # 套用膨脹後的形狀作為 Alpha
+
+    # 2. 將原始 Logo 疊在白邊底圖上
+    final_sticker = border_layer.copy()
+    logo_alpha_mask = logo_img[:, :, 3] / 255.0
+    
+    # 標準 Alpha Blending
+    for c in range(0, 3):
+        final_sticker[:, :, c] = (1.0 - logo_alpha_mask) * border_layer[:, :, c] + logo_alpha_mask * logo_img[:, :, c]
+    
+    # Alpha 通道取兩者聯集 (確保白邊和 Logo 都不透明)
+    final_sticker[:, :, 3] = cv2.bitwise_or(border_layer[:, :, 3], logo_img[:, :, 3])
+    
+    return final_sticker
+
+def add_watermark(frame, logo_path="KUANGYU_logo_v.png"):
+    """
+    [v16 最終定稿版] 浮水印小幫手
+    1. 自動裁切 Logo 白邊
+    2. 智慧縮放: 電腦5% / 手機10%
+    3. [新] 製作精緻白邊貼紙效果
+    4. 安全邊距: 係數 0.85 並貼上
+    """
     if not os.path.exists(logo_path): return frame
     logo = cv2.imread(logo_path, cv2.IMREAD_UNCHANGED)
     if logo is None: return frame
 
+    # 1. 裁切
     logo = crop_transparent_borders(logo)
     frame_h, frame_w = frame.shape[:2]
     logo_h, logo_w = logo.shape[:2]
 
-    # 智慧縮放
+    # 2. 智慧縮放
     if frame_w > frame_h: scale = 0.05 
     else: scale = 0.10
-
     new_width = int(frame_w * scale)
     new_height = int(logo_h * (new_width / logo_w))
-    
-    try: logo = cv2.resize(logo, (new_width, new_height), interpolation=cv2.INTER_AREA)
+    try: logo_resized = cv2.resize(logo, (new_width, new_height), interpolation=cv2.INTER_AREA)
     except: return frame
 
-    # 安全邊距 0.85
-    margin_right = int(new_width * 0.85)
-    margin_bottom = int(new_width * 0.85)
-    x_offset = frame_w - new_width - margin_right
-    y_offset = frame_h - new_height - margin_bottom
+    # 3. [新] 製作白邊貼紙
+    # 根據 logo 大小動態調整白邊粗細 (至少 3px，最大 8px)
+    border_px = max(3, min(8, int(new_width * 0.04))) 
+    sticker_logo = create_white_border_sticker(logo_resized, border_thickness=border_px)
+    
+    # 更新 sticker 的尺寸
+    sticker_h, sticker_w = sticker_logo.shape[:2]
+
+    # 4. 安全邊距定位 (使用新的 sticker 尺寸計算)
+    margin_right = int(sticker_w * 0.85)
+    margin_bottom = int(sticker_w * 0.85)
+    x_offset = frame_w - sticker_w - margin_right
+    y_offset = frame_h - sticker_h - margin_bottom
 
     if y_offset < 0: y_offset = 0
     if x_offset < 0: x_offset = 0
     
-    # 繪製 50% 半透明圓底
-    center_x = x_offset + new_width // 2
-    center_y = y_offset + new_height // 2
-    diagonal = np.sqrt(new_width**2 + new_height**2)
-    radius = int(diagonal / 2) + bg_padding
+    # 5. 疊加貼紙 Logo
+    alpha = sticker_logo[:, :, 3] / 255.0
+    h_part = min(sticker_h, frame_h - y_offset)
+    w_part = min(sticker_w, frame_w - x_offset)
+    roi = frame[y_offset:y_offset+h_part, x_offset:x_offset+w_part]
+    logo_part = sticker_logo[:h_part, :w_part]
+    alpha_part = alpha[:h_part, :w_part]
     
-    overlay = frame.copy()
-    cv2.circle(overlay, (center_x, center_y), radius, (255, 255, 255), -1)
-    cv2.addWeighted(overlay, 0.5, frame, 0.5, 0, frame)
+    for c in range(3):
+        roi[:, :, c] = (alpha_part * logo_part[:, :, c] + (1.0 - alpha_part) * roi[:, :, c])
+    frame[y_offset:y_offset+h_part, x_offset:x_offset+w_part] = roi
 
-    # 疊加 Logo
-    if logo.shape[2] == 4:
-        alpha = logo[:, :, 3] / 255.0
-        h_part = min(new_height, frame_h - y_offset)
-        w_part = min(new_width, frame_w - x_offset)
-        roi = frame[y_offset:y_offset+h_part, x_offset:x_offset+w_part]
-        logo_part = logo[:h_part, :w_part]
-        alpha_part = alpha[:h_part, :w_part]
-        for c in range(3):
-            roi[:, :, c] = (alpha_part * logo_part[:, :, c] + (1.0 - alpha_part) * roi[:, :, c])
-        frame[y_offset:y_offset+h_part, x_offset:x_offset+w_part] = roi
-    else:
-        frame[y_offset:y_offset+new_height, x_offset:x_offset+new_width] = logo
     return frame
 
 @st.cache_resource
@@ -305,10 +336,7 @@ if uploaded_file:
                 trail_mode = st.radio("軌跡風格", ["無限疊加 (連續線條)", "漸淡軌跡 (彗星尾巴)"], index=0)
                 st.markdown("<br>", unsafe_allow_html=True)
                 
-                # --- [修復重點] CSS 網頁顯示需要 RGB 格式，所以把 BGR 反轉 [::-1] ---
-                left_rgb = LEFT_LINE_COLOR[::-1]
-                right_rgb = RIGHT_LINE_COLOR[::-1]
-
+                # [已修復] 直接使用色碼，避免 BGR/RGB 混淆
                 st.markdown("<span class='panel-header' style='border-color: #00FFFF;'>左側數據 (Left - Cyan)</span>", unsafe_allow_html=True)
                 l_c1, l_c2 = st.columns(2)
                 with l_c1:
@@ -321,6 +349,7 @@ if uploaded_file:
                     t_l_ankle = st.checkbox("軌跡", value=st.session_state.get('t_l_ankle', False), key="t_l_ankle_f")
                 
                 st.markdown("<br>", unsafe_allow_html=True)
+                # [已修復] 直接使用色碼
                 st.markdown("<span class='panel-header' style='border-color: #FFC850;'>右側數據 (Right - Yellow)</span>", unsafe_allow_html=True)
                 r_c1, r_c2 = st.columns(2)
                 with r_c1:
@@ -411,7 +440,8 @@ if uploaded_file:
                                 if len(points_list) > 1:
                                     cv2.polylines(frame, [np.array(points_list, np.int32).reshape((-1, 1, 2))], False, color, LINE_THICKNESS, cv2.LINE_AA)
 
-                frame = add_watermark(frame, logo_path="KUANGYU_logo_v.png", bg_padding=0)
+                # [v16] 呼叫新的白邊貼紙浮水印函式
+                frame = add_watermark(frame, logo_path="KUANGYU_logo_v.png")
 
                 out.write(frame)
                 frame_idx += 1
