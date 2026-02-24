@@ -260,20 +260,20 @@ if uploaded_file:
         st.session_state['source_video_path'] = tfile.name
         st.session_state['is_processed'] = False
         st.session_state['analyzed_data'] = []
-        gc.collect() # 上傳新檔案時清理記憶體
+        gc.collect() 
 
     if not st.session_state['is_processed']:
         st.markdown("<br>", unsafe_allow_html=True)
         c1, c2, c3 = st.columns([1, 2, 1])
         with c2:
             if st.button("啟動 AI 智能掃描", type="primary"):
-                with st.spinner("正在建構 3D 骨架模型..."):
+                with st.spinner("正在建構 3D 骨架模型 (高精度模式)..."):
                     cap = cv2.VideoCapture(st.session_state['source_video_path'])
                     if not cap.isOpened(): st.error("影片格式錯誤")
                     else:
                         orig_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
                         orig_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-                        fps = int(cap.get(cv2.CAP_PROP_FPS))
+                        fps = cap.get(cv2.CAP_PROP_FPS) # [v22 修復] 保留小數點幀率
                         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
                         
                         MAX_WIDTH = 960 
@@ -287,7 +287,16 @@ if uploaded_file:
                         temp_landmarks_data = []
                         bar = st.progress(0)
                         
-                        with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5, model_complexity=1) as pose:
+                        # [v22 重點升級] 
+                        # 1. model_complexity=2 (最強模型，抓取更精準)
+                        # 2. min_tracking_confidence=0.7 (提高門檻，減少誤判)
+                        # 3. smooth_landmarks=True (平滑化，減少慢動作抖動)
+                        with mp_pose.Pose(
+                            min_detection_confidence=0.6, 
+                            min_tracking_confidence=0.7, 
+                            model_complexity=2,
+                            smooth_landmarks=True
+                        ) as pose:
                             frame_count = 0
                             while cap.isOpened():
                                 ret, frame = cap.read()
@@ -296,7 +305,6 @@ if uploaded_file:
                                 image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                                 results = pose.process(image)
                                 
-                                # 記憶體優化：只抽取數值儲存，拋棄原本龐大的物件
                                 if results.pose_landmarks:
                                     lm_list = [[lm.x, lm.y, lm.z, lm.visibility] for lm in results.pose_landmarks.landmark]
                                     temp_landmarks_data.append(lm_list)
@@ -306,7 +314,6 @@ if uploaded_file:
                                 frame_count += 1
                                 if total_frames > 0: bar.progress(min(frame_count/total_frames, 1.0))
                                 
-                                # 定期執行記憶體資源回收
                                 if frame_count % 30 == 0:
                                     gc.collect()
                                     
@@ -402,7 +409,6 @@ if uploaded_file:
                 raw_lm_data = landmarks_data[frame_idx] if frame_idx < len(landmarks_data) else None
                 current_landmarks = None
                 
-                # 記憶體優化：在繪製時才瞬間將數字組合回模型，畫完自動釋放
                 if raw_lm_data:
                     current_landmarks = landmark_pb2.NormalizedLandmarkList()
                     for lm_vals in raw_lm_data:
@@ -449,7 +455,6 @@ if uploaded_file:
                     progress_bar.progress(min(frame_idx / meta['total_frames'], 1.0))
                     status_text.text(f"AI 繪圖運算中: {int(frame_idx/meta['total_frames']*100)}%")
                 
-                # 定期執行記憶體資源回收
                 if frame_idx % 30 == 0:
                     gc.collect()
             
