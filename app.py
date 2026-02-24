@@ -11,15 +11,14 @@ from mediapipe.framework.formats import landmark_pb2
 
 # --- 0. 核心常數設定 ---
 # [v27 色彩升級]
-# OpenCV 色彩格式為 BGR (藍, 綠, 紅)
-DOT_COLOR_HEAD = (180, 100, 240)   # 頭部/軀幹中心點 (紮實粉紫)
-LEFT_COLOR = (255, 255, 0)         # 左側 (螢光青藍 Cyan)
-RIGHT_COLOR = (80, 200, 255)       # 右側 (飽和金黃 Yellow)
-SKELETON_COLOR = (255, 255, 255)   # 骨架連線 (純白)
+DOT_COLOR_HEAD = (180, 100, 240)   # 頭部 (粉紫)
+LEFT_COLOR = (255, 255, 0)         # 左側 (螢光青藍)
+RIGHT_COLOR = (80, 200, 255)       # 右側 (飽和金黃)
+SKELETON_COLOR = (255, 255, 255)   # 骨架 (純白)
 
 # [尺寸鎖定]
-LINE_THICKNESS = 2    # 線條粗細
-DOT_RADIUS = 3        # [v27] 點點稍微加大一點，更清楚
+LINE_THICKNESS = 2    
+DOT_RADIUS = 3        
 
 # [平滑係數]
 SMOOTH_FACTOR = 0.5 
@@ -37,126 +36,58 @@ st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
 
-    .stApp {
-        background-color: #F5F7F9;
-        font-family: 'Inter', sans-serif;
-    }
-
+    .stApp { background-color: #F5F7F9; font-family: 'Inter', sans-serif; }
+    
     .header-container {
-        background-color: #1E1E1E;
-        padding: 1.5rem 2rem;
-        border-radius: 16px;
-        margin-bottom: 20px;
-        color: white;
-        text-align: center;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        background-color: #1E1E1E; padding: 1.5rem 2rem; border-radius: 16px;
+        margin-bottom: 20px; color: white; text-align: center; box-shadow: 0 4px 12px rgba(0,0,0,0.1);
     }
-    .header-title {
-        font-size: 1.8rem;
-        font-weight: 800;
-        letter-spacing: 1px;
-        margin: 0;
-    }
-    .header-subtitle {
-        font-size: 0.9rem;
-        color: #A0A0A0;
-        margin-top: 5px;
-        font-weight: 400;
-    }
+    .header-title { font-size: 1.8rem; font-weight: 800; letter-spacing: 1px; margin: 0; }
+    .header-subtitle { font-size: 0.9rem; color: #A0A0A0; margin-top: 5px; font-weight: 400; }
 
     .stForm {
-        background-color: white;
-        border-radius: 12px;
-        padding: 20px;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-        border: 1px solid #E0E0E0;
+        background-color: white; border-radius: 12px; padding: 20px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.05); border: 1px solid #E0E0E0;
     }
     
     div[data-testid="stFileUploader"] {
-        background-color: #FFFFFF;
-        border: 1px dashed #E0E0E0;
-        border-radius: 12px;
-        padding: 20px;
-        text-align: center;
+        background-color: #FFFFFF; border: 1px dashed #E0E0E0; border-radius: 12px; padding: 20px; text-align: center;
     }
 
     div.stButton > button {
-        border-radius: 8px;
-        font-weight: 600;
-        border: none;
-        transition: all 0.2s ease;
-        padding: 0.6rem 1.2rem;
-        font-size: 16px;
+        border-radius: 8px; font-weight: 600; border: none; transition: all 0.2s ease;
+        padding: 0.6rem 1.2rem; font-size: 16px;
     }
     
-    button[kind="primaryFormSubmit"] {
+    /* 紅色主按鈕 (生成/下載) */
+    button[kind="primaryFormSubmit"], div.stButton > button[kind="primary"] {
         background: linear-gradient(135deg, #FF4B4B 0%, #D42F2F 100%);
-        color: white;
-        box-shadow: 0 4px 6px rgba(255, 75, 75, 0.2);
-        width: 100%;
-        border: none;
-    }
-    button[kind="primaryFormSubmit"]:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 6px 12px rgba(255, 75, 75, 0.3);
+        color: white; box-shadow: 0 4px 6px rgba(255, 75, 75, 0.2); width: 100%; border: none;
     }
     
-    div.stButton > button.st-emotion-cache-19rxjzo {
-        background: linear-gradient(135deg, #FF4B4B 0%, #D42F2F 100%);
-        color: white;
-        width: 100%;
+    /* [v28] 導航按鈕樣式 (上一格/下一格) */
+    div.stButton > button[kind="secondary"] {
+        background-color: #3E3E42; color: white; border: 1px solid #555;
+    }
+    div.stButton > button[kind="secondary"]:hover {
+        background-color: #555; border-color: #777; color: #FF4B4B;
     }
 
-    .stCheckbox label {
-        font-size: 15px !important;
-        font-weight: 600;
-        color: #333;
-    }
-
-    .stRadio label {
-        font-weight: 600;
-        color: #333;
-    }
-
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    header {visibility: hidden;}
-    
-    .stVideo {
-        border-radius: 12px;
-        overflow: hidden;
-        box-shadow: 0 8px 16px rgba(0,0,0,0.1);
-        width: 100%;
-    }
+    .stCheckbox label, .stRadio label { font-weight: 600; color: #333; }
+    #MainMenu {visibility: hidden;} footer {visibility: hidden;} header {visibility: hidden;}
+    .stVideo { border-radius: 12px; overflow: hidden; box-shadow: 0 8px 16px rgba(0,0,0,0.1); width: 100%; }
     
     .panel-header {
-        font-size: 16px;
-        font-weight: bold;
-        color: #333;
-        margin-bottom: 15px;
-        border-left: 4px solid #FF4B4B;
-        padding-left: 10px;
-        display: block;
+        font-size: 16px; font-weight: bold; color: #333; margin-bottom: 15px;
+        border-left: 4px solid #FF4B4B; padding-left: 10px; display: block;
     }
-    
     .mobile-tip {
-        font-size: 14px;
-        color: #666;
-        background-color: #f0f2f6;
-        padding: 10px;
-        border-radius: 8px;
-        margin-top: 10px;
-        text-align: center;
-        border: 1px solid #ddd;
+        font-size: 14px; color: #666; background-color: #f0f2f6; padding: 10px;
+        border-radius: 8px; margin-top: 10px; text-align: center; border: 1px solid #ddd;
     }
-    
     .editor-container {
-        background-color: #262730;
-        color: white;
-        padding: 20px;
-        border-radius: 12px;
-        margin-top: 20px;
-        border: 1px solid #444;
+        background-color: #262730; color: white; padding: 20px; border-radius: 12px;
+        margin-top: 20px; border: 1px solid #444;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -176,50 +107,41 @@ def create_white_border_sticker(logo_img, border_thickness=5):
     pad = border_thickness + 2
     padded_logo = np.zeros((h + pad * 2, w + pad * 2, 4), dtype=np.uint8)
     padded_logo[pad:pad+h, pad:pad+w] = logo_img
-
     alpha = padded_logo[:, :, 3]
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (border_thickness*2+1, border_thickness*2+1))
     dilated_alpha = cv2.dilate(alpha, kernel)
-    
     border_layer = np.zeros_like(padded_logo)
     border_layer[:] = (255, 255, 255, 255)
     border_layer[:, :, 3] = dilated_alpha
-    
     final_sticker = border_layer.copy()
     logo_alpha_mask = padded_logo[:, :, 3] / 255.0
     for c in range(0, 3):
         final_sticker[:, :, c] = (1.0 - logo_alpha_mask) * border_layer[:, :, c] + logo_alpha_mask * padded_logo[:, :, c]
     final_sticker[:, :, 3] = cv2.bitwise_or(border_layer[:, :, 3], padded_logo[:, :, 3])
-    
     return final_sticker
 
 def add_watermark(frame, logo_path="KUANGYU_logo_v.png"):
     if not os.path.exists(logo_path): return frame
     logo = cv2.imread(logo_path, cv2.IMREAD_UNCHANGED)
     if logo is None: return frame
-
     logo = crop_transparent_borders(logo)
     frame_h, frame_w = frame.shape[:2]
     logo_h, logo_w = logo.shape[:2]
     if frame_w > frame_h: scale = 0.05 
     else: scale = 0.10
-    
     new_width = int(frame_w * scale)
     new_height = int(logo_h * (new_width / logo_w))
     try: logo_resized = cv2.resize(logo, (new_width, new_height), interpolation=cv2.INTER_AREA)
     except: return frame
-
     border_px = max(3, min(8, int(new_width * 0.04))) 
     sticker_logo = create_white_border_sticker(logo_resized, border_thickness=border_px)
     sticker_h, sticker_w = sticker_logo.shape[:2]
-
     margin_right = int(sticker_w * 0.2)
     margin_bottom = int(sticker_w * 0.2)
     x_offset = frame_w - sticker_w - margin_right
     y_offset = frame_h - sticker_h - margin_bottom
     if y_offset < 0: y_offset = 0
     if x_offset < 0: x_offset = 0
-    
     alpha = sticker_logo[:, :, 3] / 255.0
     h_part = min(sticker_h, frame_h - y_offset)
     w_part = min(sticker_w, frame_w - x_offset)
@@ -249,38 +171,29 @@ def draw_dashboard(image, label, angle, x, y, color):
     cv2.putText(image, f"{int(angle)}", (x + 60, y + 5), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2, cv2.LINE_AA)
     cv2.circle(image, (x + 100, y - 5), 2, (255, 255, 255), 1)
 
-# [v27] 自定義骨架繪製函式 (左右分色)
 def draw_skeleton_with_colored_sides(image, landmarks):
     h, w = image.shape[:2]
-    # 1. 繪製骨架連線 (白色)
+    # 繪製白色骨架連線
     mp_drawing.draw_landmarks(
-        image, 
-        landmarks, 
-        mp_pose.POSE_CONNECTIONS,
-        landmark_drawing_spec=None, # 不使用預設點點
+        image, landmarks, mp_pose.POSE_CONNECTIONS,
+        landmark_drawing_spec=None,
         connection_drawing_spec=mp_drawing.DrawingSpec(color=SKELETON_COLOR, thickness=LINE_THICKNESS, circle_radius=1)
     )
-    
-    # 2. 繪製左右分色的點點
-    # 左側關鍵點 ID (奇數)
+    # 定義左右側索引
     left_indices = {11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31}
-    # 右側關鍵點 ID (偶數)
     right_indices = {12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32}
     
+    # 繪製分色點點
     for idx, lm in enumerate(landmarks.landmark):
-        if lm.visibility < 0.5: continue # 信心度太低不畫
-        
+        if lm.visibility < 0.5: continue
         cx, cy = int(lm.x * w), int(lm.y * h)
         
-        if idx in left_indices:
-            color = LEFT_COLOR
-        elif idx in right_indices:
-            color = RIGHT_COLOR
-        else:
-            color = DOT_COLOR_HEAD # 鼻子、眼睛、耳朵等
-            
-        cv2.circle(image, (cx, cy), DOT_RADIUS, color, -1) # 實心圓
-        cv2.circle(image, (cx, cy), DOT_RADIUS+1, (255, 255, 255), 1) # 白色描邊
+        if idx in left_indices: color = LEFT_COLOR
+        elif idx in right_indices: color = RIGHT_COLOR
+        else: color = DOT_COLOR_HEAD
+        
+        cv2.circle(image, (cx, cy), DOT_RADIUS, color, -1)
+        cv2.circle(image, (cx, cy), DOT_RADIUS+1, (255, 255, 255), 1)
 
 # --- Session State ---
 if 'analyzed_data' not in st.session_state: st.session_state['analyzed_data'] = [] 
@@ -288,8 +201,9 @@ if 'video_meta' not in st.session_state: st.session_state['video_meta'] = {}
 if 'source_video_path' not in st.session_state: st.session_state['source_video_path'] = None
 if 'current_file_name' not in st.session_state: st.session_state['current_file_name'] = ""
 if 'is_processed' not in st.session_state: st.session_state['is_processed'] = False
+# [v28] 用於關鍵影格導航的 State
+if 'editor_frame_idx' not in st.session_state: st.session_state['editor_frame_idx'] = 0
 
-# [v26] 初始化：預設開啟所有關節角度 (True)，軌跡維持關閉 (False)
 for part in ['l_hip', 'l_knee', 'l_ankle', 'r_hip', 'r_knee', 'r_ankle']:
     if part not in st.session_state: st.session_state[part] = True 
     if f"t_{part}" not in st.session_state: st.session_state[f"t_{part}"] = False
@@ -335,13 +249,7 @@ if uploaded_file:
                         temp_landmarks_data = []
                         bar = st.progress(0)
                         
-                        # [v25/26] 保持標準穩定設定
-                        with mp_pose.Pose(
-                            min_detection_confidence=0.6, 
-                            min_tracking_confidence=0.7, 
-                            model_complexity=1, 
-                            smooth_landmarks=True
-                        ) as pose:
+                        with mp_pose.Pose(min_detection_confidence=0.6, min_tracking_confidence=0.7, model_complexity=1, smooth_landmarks=True) as pose:
                             frame_count = 0
                             while cap.isOpened():
                                 ret, frame = cap.read()
@@ -349,18 +257,14 @@ if uploaded_file:
                                 if orig_width > MAX_WIDTH: frame = cv2.resize(frame, (new_width, new_height))
                                 image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                                 results = pose.process(image)
-                                
                                 if results.pose_landmarks:
                                     lm_list = [[lm.x, lm.y, lm.z, lm.visibility] for lm in results.pose_landmarks.landmark]
                                     temp_landmarks_data.append(lm_list)
                                 else:
                                     temp_landmarks_data.append(None)
-                                    
                                 frame_count += 1
                                 if total_frames > 0: bar.progress(min(frame_count/total_frames, 1.0))
-                                
-                                if frame_count % 30 == 0:
-                                    gc.collect()
+                                if frame_count % 30 == 0: gc.collect()
                                     
                         cap.release()
                         st.session_state['analyzed_data'] = temp_landmarks_data
@@ -414,7 +318,6 @@ if uploaded_file:
                         't_r_hip': t_r_hip, 't_r_knee': t_r_knee, 't_r_ankle': t_r_ankle
                     })
 
-            # [v27.1 修復] 這裡已經將變數名稱 LEFT_LINE_COLOR/RIGHT_LINE_COLOR 更新為 LEFT_COLOR/RIGHT_COLOR
             metrics_db = {
                 "l_hip":   ("L-Hip", mp_pose.PoseLandmark.LEFT_SHOULDER, mp_pose.PoseLandmark.LEFT_HIP, mp_pose.PoseLandmark.LEFT_KNEE, LEFT_COLOR, mp_pose.PoseLandmark.LEFT_HIP),
                 "l_knee":  ("L-Knee", mp_pose.PoseLandmark.LEFT_HIP, mp_pose.PoseLandmark.LEFT_KNEE, mp_pose.PoseLandmark.LEFT_ANKLE, LEFT_COLOR, mp_pose.PoseLandmark.LEFT_KNEE),
@@ -428,10 +331,8 @@ if uploaded_file:
         with col_video:
             tfile_output_avi = tempfile.NamedTemporaryFile(delete=False, suffix='.avi').name
             output_video_path = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4').name
-            
             out = cv2.VideoWriter(tfile_output_avi, cv2.VideoWriter_fourcc(*'MJPG'), meta['fps'], (meta['width'], meta['height']))
             cap = cv2.VideoCapture(st.session_state['source_video_path'])
-            
             dashboard_positions = {
                 "L-Hip": (20, 100), "L-Knee": (20, 145), "L-Ankle": (20, 190),
                 "R-Hip": (meta['width'] - 135, 100), "R-Knee": (meta['width'] - 135, 145), "R-Ankle": (meta['width'] - 135, 190)
@@ -447,7 +348,6 @@ if uploaded_file:
             while cap.isOpened():
                 ret, frame = cap.read()
                 if not ret: break
-                
                 curr_h, curr_w = frame.shape[:2]
                 target_w, target_h = meta['width'], meta['height']
                 if curr_w != target_w or curr_h != target_h:
@@ -456,7 +356,6 @@ if uploaded_file:
                 raw_lm_data = landmarks_data[frame_idx] if frame_idx < len(landmarks_data) else None
                 current_landmarks = None
                 
-                # EMA 平滑演算法
                 if raw_lm_data:
                     current_landmarks = landmark_pb2.NormalizedLandmarkList()
                     current_raw_points = []
@@ -466,20 +365,15 @@ if uploaded_file:
                             prev_x, prev_y = prev_frame_landmarks[i]
                             smooth_x = prev_x * SMOOTH_FACTOR + curr_x * (1 - SMOOTH_FACTOR)
                             smooth_y = prev_y * SMOOTH_FACTOR + curr_y * (1 - SMOOTH_FACTOR)
-                        else:
-                            smooth_x, smooth_y = curr_x, curr_y
+                        else: smooth_x, smooth_y = curr_x, curr_y
                         current_raw_points.append((smooth_x, smooth_y))
                         current_landmarks.landmark.add(x=smooth_x, y=smooth_y, z=lm_vals[2], visibility=lm_vals[3])
                     prev_frame_landmarks = current_raw_points
-                else:
-                    prev_frame_landmarks = None
+                else: prev_frame_landmarks = None
 
                 if current_landmarks:
-                    # [v27] 改用自定義繪圖，實現點點左右分色
                     draw_skeleton_with_colored_sides(frame, current_landmarks)
                     lm = current_landmarks.landmark
-                    
-                    # [v27.1] 這裡也同步更新為 LEFT_COLOR / RIGHT_COLOR
                     cv2.putText(frame, "LEFT SIDE", (20, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, LEFT_COLOR, 2, cv2.LINE_AA)
                     cv2.putText(frame, "RIGHT SIDE", (meta['width'] - 135, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, RIGHT_COLOR, 2, cv2.LINE_AA)
                     
@@ -488,13 +382,11 @@ if uploaded_file:
                             angle = calculate_angle([lm[idx_a.value].x, lm[idx_a.value].y], [lm[idx_b.value].x, lm[idx_b.value].y], [lm[idx_c.value].x, lm[idx_c.value].y])
                             if label in dashboard_positions: draw_dashboard(frame, label, angle, *dashboard_positions[label], color)
                         except: pass
-                        
                         if show_trail_flag:
                             px, py = int(lm[track_idx.value].x * meta['width']), int(lm[track_idx.value].y * meta['height'])
                             if label not in path_storage: path_storage[label] = []
                             path_storage[label].append((px, py))
                             points_list = path_storage[label]
-                            
                             if IS_FADE_MODE:
                                 points_list = points_list[-MAX_TRAIL_LENGTH:]
                                 path_storage[label] = points_list
@@ -508,15 +400,12 @@ if uploaded_file:
                                     cv2.polylines(frame, [np.array(points_list, np.int32).reshape((-1, 1, 2))], False, color, LINE_THICKNESS, cv2.LINE_AA)
 
                 frame = add_watermark(frame, logo_path="KUANGYU_logo_v.png")
-
                 out.write(frame)
                 frame_idx += 1
                 if meta['total_frames'] > 0 and frame_idx % 5 == 0:
                     progress_bar.progress(min(frame_idx / meta['total_frames'], 1.0))
                     status_text.text(f"AI 繪圖運算中: {int(frame_idx/meta['total_frames']*100)}%")
-                
-                if frame_idx % 30 == 0:
-                    gc.collect()
+                if frame_idx % 30 == 0: gc.collect()
             
             cap.release()
             out.release()
@@ -525,8 +414,7 @@ if uploaded_file:
             
             try:
                 subprocess.run(['ffmpeg', '-y', '-i', tfile_output_avi, '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-preset', 'ultrafast', '-crf', '25', output_video_path], check=True, capture_output=True, text=True)
-            except subprocess.CalledProcessError as e:
-                st.error(f"影片轉檔失敗 (FFmpeg Error): {e.stderr}")
+            except subprocess.CalledProcessError as e: st.error(f"影片轉檔失敗 (FFmpeg Error): {e.stderr}")
             
             status_text.empty()
             st.success("分析完成")
@@ -534,31 +422,45 @@ if uploaded_file:
             st.markdown("<div class='mobile-tip'>手機版若無法下載，請點擊上方影片播放器右下角「⋮」或長按按鈕選擇「分享 / 下載」</div>", unsafe_allow_html=True)
             with open(output_video_path, 'rb') as f: st.download_button("下載影片", f.read(), "kuangyu_analysis.mp4", "video/mp4", type="primary", use_container_width=True)
 
-            # --- [v25] 關鍵影格精修實驗室 ---
+            # --- [v29] 關鍵影格精修實驗室 (完整還原 v27 功能 + v28 按鈕) ---
             st.divider()
-            st.markdown("<div class='editor-container'><h3 style='margin:0; color:#FF4B4B;'>🔍 關鍵影格精修實驗室</h3><p style='color:#ccc; font-size:0.9rem;'>AI 抓不準？教練親手修！選擇關鍵動作瞬間，微調關節位置，生成完美數據圖。</p></div>", unsafe_allow_html=True)
+            st.markdown("<div class='editor-container'><h3 style='margin:0; color:#FF4B4B;'>🔍 關鍵影格精修實驗室</h3><p style='color:#ccc; font-size:0.9rem;'>AI 抓不準？教練親手修！使用按鈕逐格尋找，微調關節位置。</p></div>", unsafe_allow_html=True)
             
-            if 'editor_frame_idx' not in st.session_state: st.session_state['editor_frame_idx'] = 0
-            
-            # 1. 影格選擇器
-            frame_idx_slider = st.slider("選擇關鍵影格 (Frame Index)", 0, meta['total_frames']-1, 0)
-            
+            # 按鈕回調函式
+            def prev_frame():
+                st.session_state.editor_frame_idx = max(0, st.session_state.editor_frame_idx - 1)
+            def next_frame():
+                st.session_state.editor_frame_idx = min(meta['total_frames']-1, st.session_state.editor_frame_idx + 1)
+
+            # 導航控制區
+            c_nav_1, c_nav_2, c_nav_3 = st.columns([1, 6, 1])
+            with c_nav_1:
+                st.button("◀ 上一格", on_click=prev_frame, use_container_width=True, type="secondary")
+            with c_nav_3:
+                st.button("下一格 ▶", on_click=next_frame, use_container_width=True, type="secondary")
+            with c_nav_2:
+                # 顯示時間秒數
+                curr_sec = st.session_state.editor_frame_idx / meta['fps']
+                st.session_state.editor_frame_idx = st.slider(
+                    f"⏱️ 時間軸: {curr_sec:.2f} 秒 (Frame {st.session_state.editor_frame_idx})", 
+                    0, meta['total_frames']-1, st.session_state.editor_frame_idx,
+                    key="editor_slider"
+                )
+
             # 讀取指定影格
+            frame_idx_slider = st.session_state.editor_frame_idx
             cap_editor = cv2.VideoCapture(st.session_state['source_video_path'])
             cap_editor.set(cv2.CAP_PROP_POS_FRAMES, frame_idx_slider)
             ret_ed, frame_ed = cap_editor.read()
             cap_editor.release()
             
             if ret_ed:
-                # 統一尺寸
                 target_w, target_h = meta['width'], meta['height']
                 frame_ed = cv2.resize(frame_ed, (target_w, target_h), interpolation=cv2.INTER_AREA)
-                
-                # 取得該幀的原始 AI 數據
                 raw_lm = landmarks_data[frame_idx_slider] if frame_idx_slider < len(landmarks_data) else None
                 
                 if raw_lm:
-                    # 定義關節映射
+                    # 關節映射表
                     joint_map = {
                         "左髖 (Left Hip)": 23, "左膝 (Left Knee)": 25, "左踝 (Left Ankle)": 27,
                         "右髖 (Right Hip)": 24, "右膝 (Right Knee)": 26, "右踝 (Right Ankle)": 28,
@@ -568,47 +470,36 @@ if uploaded_file:
                     
                     c1, c2 = st.columns([1, 2])
                     with c1:
-                        target_joint = st.selectbox("選擇要微調的關節", list(joint_map.keys()))
+                        target_joint = st.selectbox("1. 選擇要微調的關節", list(joint_map.keys()))
                         joint_idx = joint_map[target_joint]
-                        
-                        # 取得原始座標 (Normalized)
                         orig_x = raw_lm[joint_idx][0]
                         orig_y = raw_lm[joint_idx][1]
                         
-                        # 微調控制項 (單位：像素)
-                        st.write("📍 **微調控制器 (像素偏移)**")
-                        offset_x = st.number_input("↔️ 水平微調 (X)", value=0, step=1, key=f"off_x_{frame_idx_slider}")
-                        offset_y = st.number_input("↕️ 垂直微調 (Y)", value=0, step=1, key=f"off_y_{frame_idx_slider}")
-                        
-                        st.info("💡 調整後，右側畫面與角度數據會即時更新！")
+                        st.write("2. 微調控制器 (點擊調整)")
+                        offset_x = st.number_input("↔️ 左右微調 (X)", value=0, step=1, key=f"off_x_{frame_idx_slider}")
+                        offset_y = st.number_input("↕️ 上下微調 (Y)", value=0, step=1, key=f"off_y_{frame_idx_slider}")
+                        st.info("💡 調整數值後，右側畫面會即時更新！")
 
                     # 應用微調
                     adjusted_lm = [list(pt) for pt in raw_lm]
-                    
-                    # 計算新座標
                     adj_x_norm = orig_x + (offset_x / target_w)
                     adj_y_norm = orig_y + (offset_y / target_h)
-                    
                     adjusted_lm[joint_idx][0] = adj_x_norm
                     adjusted_lm[joint_idx][1] = adj_y_norm
                     
-                    # 重建 Protobuf 物件以供繪圖
                     editor_landmarks = landmark_pb2.NormalizedLandmarkList()
                     for pt in adjusted_lm:
                         editor_landmarks.landmark.add(x=pt[0], y=pt[1], z=pt[2], visibility=pt[3])
                     
-                    # [v27] 編輯器也套用左右分色
+                    # 繪製畫面
                     draw_skeleton_with_colored_sides(frame_ed, editor_landmarks)
-                    
-                    # 重新計算並繪製儀表板
                     lm_ed = editor_landmarks.landmark
-                    # [v27.1] 這裡也記得改為 LEFT_COLOR / RIGHT_COLOR
                     cv2.putText(frame_ed, "LEFT SIDE", (20, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, LEFT_COLOR, 2, cv2.LINE_AA)
                     cv2.putText(frame_ed, "RIGHT SIDE", (meta['width'] - 135, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, RIGHT_COLOR, 2, cv2.LINE_AA)
                     
+                    # 重算角度
                     for label, idx_a, idx_b, idx_c, color, track_idx, show_trail_flag in active_metrics:
                         try:
-                            # 使用調整後的座標計算角度
                             angle = calculate_angle(
                                 [lm_ed[idx_a.value].x, lm_ed[idx_a.value].y], 
                                 [lm_ed[idx_b.value].x, lm_ed[idx_b.value].y], 
@@ -617,14 +508,10 @@ if uploaded_file:
                             if label in dashboard_positions: draw_dashboard(frame_ed, label, angle, *dashboard_positions[label], color)
                         except: pass
                     
-                    # 加上 Logo
                     frame_ed = add_watermark(frame_ed, logo_path="KUANGYU_logo_v.png")
                     
-                    # 顯示
                     with c2:
-                        st.image(frame_ed, channels="BGR", caption=f"關鍵影格: {frame_idx_slider} (已套用微調)", use_container_width=True)
-                        
-                        # 下載按鈕
+                        st.image(frame_ed, channels="BGR", caption=f"關鍵影格: {frame_idx_slider} ({curr_sec:.2f}s)", use_container_width=True)
                         is_success, buffer = cv2.imencode(".jpg", frame_ed)
                         if is_success:
                             st.download_button(
@@ -635,4 +522,4 @@ if uploaded_file:
                                 type="primary"
                             )
                 else:
-                    st.warning("⚠️ 此影格 AI 未偵測到完整骨架，無法進行微調。請嘗試選擇前後的影格。")
+                    st.warning(f"⚠️ 第 {frame_idx_slider} 格 AI 未抓到數據，請按「上一格」或「下一格」尋找鄰近畫面。")
