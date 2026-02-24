@@ -249,7 +249,7 @@ def draw_dashboard(image, label, angle, x, y, color):
     cv2.putText(image, f"{int(angle)}", (x + 60, y + 5), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2, cv2.LINE_AA)
     cv2.circle(image, (x + 100, y - 5), 2, (255, 255, 255), 1)
 
-# [v27 新增] 自定義骨架繪製函式 (左右分色)
+# [v27] 自定義骨架繪製函式 (左右分色)
 def draw_skeleton_with_colored_sides(image, landmarks):
     h, w = image.shape[:2]
     # 1. 繪製骨架連線 (白色)
@@ -280,7 +280,7 @@ def draw_skeleton_with_colored_sides(image, landmarks):
             color = DOT_COLOR_HEAD # 鼻子、眼睛、耳朵等
             
         cv2.circle(image, (cx, cy), DOT_RADIUS, color, -1) # 實心圓
-        cv2.circle(image, (cx, cy), DOT_RADIUS+1, (255, 255, 255), 1) # 白色描邊，增加對比度
+        cv2.circle(image, (cx, cy), DOT_RADIUS+1, (255, 255, 255), 1) # 白色描邊
 
 # --- Session State ---
 if 'analyzed_data' not in st.session_state: st.session_state['analyzed_data'] = [] 
@@ -414,13 +414,14 @@ if uploaded_file:
                         't_r_hip': t_r_hip, 't_r_knee': t_r_knee, 't_r_ankle': t_r_ankle
                     })
 
+            # [v27.1 修復] 這裡已經將變數名稱 LEFT_LINE_COLOR/RIGHT_LINE_COLOR 更新為 LEFT_COLOR/RIGHT_COLOR
             metrics_db = {
-                "l_hip":   ("L-Hip", mp_pose.PoseLandmark.LEFT_SHOULDER, mp_pose.PoseLandmark.LEFT_HIP, mp_pose.PoseLandmark.LEFT_KNEE, LEFT_LINE_COLOR, mp_pose.PoseLandmark.LEFT_HIP),
-                "l_knee":  ("L-Knee", mp_pose.PoseLandmark.LEFT_HIP, mp_pose.PoseLandmark.LEFT_KNEE, mp_pose.PoseLandmark.LEFT_ANKLE, LEFT_LINE_COLOR, mp_pose.PoseLandmark.LEFT_KNEE),
-                "l_ankle": ("L-Ankle", mp_pose.PoseLandmark.LEFT_KNEE, mp_pose.PoseLandmark.LEFT_ANKLE, mp_pose.PoseLandmark.LEFT_FOOT_INDEX, LEFT_LINE_COLOR, mp_pose.PoseLandmark.LEFT_ANKLE),
-                "r_hip":   ("R-Hip", mp_pose.PoseLandmark.RIGHT_SHOULDER, mp_pose.PoseLandmark.RIGHT_HIP, mp_pose.PoseLandmark.RIGHT_KNEE, RIGHT_LINE_COLOR, mp_pose.PoseLandmark.RIGHT_HIP),
-                "r_knee":  ("R-Knee", mp_pose.PoseLandmark.RIGHT_HIP, mp_pose.PoseLandmark.RIGHT_KNEE, mp_pose.PoseLandmark.RIGHT_ANKLE, RIGHT_LINE_COLOR, mp_pose.PoseLandmark.RIGHT_KNEE),
-                "r_ankle": ("R-Ankle", mp_pose.PoseLandmark.RIGHT_KNEE, mp_pose.PoseLandmark.RIGHT_ANKLE, mp_pose.PoseLandmark.RIGHT_FOOT_INDEX, RIGHT_LINE_COLOR, mp_pose.PoseLandmark.RIGHT_ANKLE),
+                "l_hip":   ("L-Hip", mp_pose.PoseLandmark.LEFT_SHOULDER, mp_pose.PoseLandmark.LEFT_HIP, mp_pose.PoseLandmark.LEFT_KNEE, LEFT_COLOR, mp_pose.PoseLandmark.LEFT_HIP),
+                "l_knee":  ("L-Knee", mp_pose.PoseLandmark.LEFT_HIP, mp_pose.PoseLandmark.LEFT_KNEE, mp_pose.PoseLandmark.LEFT_ANKLE, LEFT_COLOR, mp_pose.PoseLandmark.LEFT_KNEE),
+                "l_ankle": ("L-Ankle", mp_pose.PoseLandmark.LEFT_KNEE, mp_pose.PoseLandmark.LEFT_ANKLE, mp_pose.PoseLandmark.LEFT_FOOT_INDEX, LEFT_COLOR, mp_pose.PoseLandmark.LEFT_ANKLE),
+                "r_hip":   ("R-Hip", mp_pose.PoseLandmark.RIGHT_SHOULDER, mp_pose.PoseLandmark.RIGHT_HIP, mp_pose.PoseLandmark.RIGHT_KNEE, RIGHT_COLOR, mp_pose.PoseLandmark.RIGHT_HIP),
+                "r_knee":  ("R-Knee", mp_pose.PoseLandmark.RIGHT_HIP, mp_pose.PoseLandmark.RIGHT_KNEE, mp_pose.PoseLandmark.RIGHT_ANKLE, RIGHT_COLOR, mp_pose.PoseLandmark.RIGHT_KNEE),
+                "r_ankle": ("R-Ankle", mp_pose.PoseLandmark.RIGHT_KNEE, mp_pose.PoseLandmark.RIGHT_ANKLE, mp_pose.PoseLandmark.RIGHT_FOOT_INDEX, RIGHT_COLOR, mp_pose.PoseLandmark.RIGHT_ANKLE),
             }
             active_metrics = [metrics_db[k] + (st.session_state.get(f"t_{k}", False),) for k in metrics_db if st.session_state.get(k, False)]
 
@@ -478,8 +479,9 @@ if uploaded_file:
                     draw_skeleton_with_colored_sides(frame, current_landmarks)
                     lm = current_landmarks.landmark
                     
-                    cv2.putText(frame, "LEFT SIDE", (20, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, LEFT_LINE_COLOR, 2, cv2.LINE_AA)
-                    cv2.putText(frame, "RIGHT SIDE", (meta['width'] - 135, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, RIGHT_LINE_COLOR, 2, cv2.LINE_AA)
+                    # [v27.1] 這裡也同步更新為 LEFT_COLOR / RIGHT_COLOR
+                    cv2.putText(frame, "LEFT SIDE", (20, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, LEFT_COLOR, 2, cv2.LINE_AA)
+                    cv2.putText(frame, "RIGHT SIDE", (meta['width'] - 135, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, RIGHT_COLOR, 2, cv2.LINE_AA)
                     
                     for label, idx_a, idx_b, idx_c, color, track_idx, show_trail_flag in active_metrics:
                         try:
@@ -574,7 +576,6 @@ if uploaded_file:
                         orig_y = raw_lm[joint_idx][1]
                         
                         # 微調控制項 (單位：像素)
-                        # 我們使用 offset 方式，避免數值太複雜
                         st.write("📍 **微調控制器 (像素偏移)**")
                         offset_x = st.number_input("↔️ 水平微調 (X)", value=0, step=1, key=f"off_x_{frame_idx_slider}")
                         offset_y = st.number_input("↕️ 垂直微調 (Y)", value=0, step=1, key=f"off_y_{frame_idx_slider}")
@@ -582,11 +583,9 @@ if uploaded_file:
                         st.info("💡 調整後，右側畫面與角度數據會即時更新！")
 
                     # 應用微調
-                    # 複製一份數據以免動到原始資料
                     adjusted_lm = [list(pt) for pt in raw_lm]
                     
-                    # 將 Normalized 轉為 Pixel -> 加 Offset -> 轉回 Normalized (為了給 draw_landmarks 用)
-                    # 其實直接改 Normalized 比較快： offset / width
+                    # 計算新座標
                     adj_x_norm = orig_x + (offset_x / target_w)
                     adj_y_norm = orig_y + (offset_y / target_h)
                     
@@ -603,8 +602,9 @@ if uploaded_file:
                     
                     # 重新計算並繪製儀表板
                     lm_ed = editor_landmarks.landmark
-                    cv2.putText(frame_ed, "LEFT SIDE", (20, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, LEFT_LINE_COLOR, 2, cv2.LINE_AA)
-                    cv2.putText(frame_ed, "RIGHT SIDE", (meta['width'] - 135, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, RIGHT_LINE_COLOR, 2, cv2.LINE_AA)
+                    # [v27.1] 這裡也記得改為 LEFT_COLOR / RIGHT_COLOR
+                    cv2.putText(frame_ed, "LEFT SIDE", (20, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, LEFT_COLOR, 2, cv2.LINE_AA)
+                    cv2.putText(frame_ed, "RIGHT SIDE", (meta['width'] - 135, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, RIGHT_COLOR, 2, cv2.LINE_AA)
                     
                     for label, idx_a, idx_b, idx_c, color, track_idx, show_trail_flag in active_metrics:
                         try:
