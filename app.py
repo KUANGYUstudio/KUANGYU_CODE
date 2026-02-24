@@ -267,13 +267,13 @@ if uploaded_file:
         c1, c2, c3 = st.columns([1, 2, 1])
         with c2:
             if st.button("啟動 AI 智能掃描", type="primary"):
-                with st.spinner("正在建構 3D 骨架模型 (高精度模式)..."):
+                with st.spinner("正在建構 3D 骨架模型 (標準穩定模式)..."):
                     cap = cv2.VideoCapture(st.session_state['source_video_path'])
                     if not cap.isOpened(): st.error("影片格式錯誤")
                     else:
                         orig_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
                         orig_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-                        fps = cap.get(cv2.CAP_PROP_FPS) # [v22 修復] 保留小數點幀率
+                        fps = cap.get(cv2.CAP_PROP_FPS)
                         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
                         
                         MAX_WIDTH = 960 
@@ -287,14 +287,13 @@ if uploaded_file:
                         temp_landmarks_data = []
                         bar = st.progress(0)
                         
-                        # [v22 重點升級] 
-                        # 1. model_complexity=2 (最強模型，抓取更精準)
-                        # 2. min_tracking_confidence=0.7 (提高門檻，減少誤判)
-                        # 3. smooth_landmarks=True (平滑化，減少慢動作抖動)
+                        # [v23 穩定修復] 
+                        # 改回 model_complexity=1 以符合雲端伺服器權限
+                        # 維持 min_tracking_confidence=0.7 以確保精準度
                         with mp_pose.Pose(
                             min_detection_confidence=0.6, 
                             min_tracking_confidence=0.7, 
-                            model_complexity=2,
+                            model_complexity=1, 
                             smooth_landmarks=True
                         ) as pose:
                             frame_count = 0
