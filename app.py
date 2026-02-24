@@ -10,7 +10,6 @@ import gc
 from mediapipe.framework.formats import landmark_pb2
 
 # --- 0. 核心常數設定 ---
-# [v27 色彩升級]
 DOT_COLOR_HEAD = (180, 100, 240)   # 頭部 (粉紫)
 LEFT_COLOR = (255, 255, 0)         # 左側 (螢光青藍)
 RIGHT_COLOR = (80, 200, 255)       # 右側 (飽和金黃)
@@ -59,13 +58,13 @@ st.markdown("""
         padding: 0.6rem 1.2rem; font-size: 16px;
     }
     
-    /* 紅色主按鈕 (生成/下載) */
+    /* 紅色主按鈕 */
     button[kind="primaryFormSubmit"], div.stButton > button[kind="primary"] {
         background: linear-gradient(135deg, #FF4B4B 0%, #D42F2F 100%);
         color: white; box-shadow: 0 4px 6px rgba(255, 75, 75, 0.2); width: 100%; border: none;
     }
     
-    /* 導航按鈕樣式 */
+    /* 導航與智慧按鈕 */
     div.stButton > button[kind="secondary"] {
         background-color: #3E3E42; color: white; border: 1px solid #555;
     }
@@ -195,8 +194,9 @@ if 'video_meta' not in st.session_state: st.session_state['video_meta'] = {}
 if 'source_video_path' not in st.session_state: st.session_state['source_video_path'] = None
 if 'current_file_name' not in st.session_state: st.session_state['current_file_name'] = ""
 if 'is_processed' not in st.session_state: st.session_state['is_processed'] = False
-# [v28] 用於關鍵影格導航的 State
 if 'editor_frame_idx' not in st.session_state: st.session_state['editor_frame_idx'] = 0
+# [v31] 關鍵影格調整儲存區：{ frame_idx: { joint_name: (offset_x, offset_y) } }
+if 'keyframe_adjustments' not in st.session_state: st.session_state['keyframe_adjustments'] = {}
 
 for part in ['l_hip', 'l_knee', 'l_ankle', 'r_hip', 'r_knee', 'r_ankle']:
     if part not in st.session_state: st.session_state[part] = True 
@@ -216,6 +216,7 @@ if uploaded_file:
         st.session_state['source_video_path'] = tfile.name
         st.session_state['is_processed'] = False
         st.session_state['analyzed_data'] = []
+        st.session_state['keyframe_adjustments'] = {} # 重置微調紀錄
         gc.collect() 
 
     if not st.session_state['is_processed']:
@@ -413,26 +414,58 @@ if uploaded_file:
             status_text.empty()
             st.success("分析完成")
             
-            # [v30] 影音同步連動：影片播放器跳轉
+            # [v30] 影音同步連動
             current_timestamp = 0
             if meta['fps'] > 0:
                 current_timestamp = st.session_state.editor_frame_idx / meta['fps']
-            
-            # 將 start_time 參數傳入 st.video，實現跳轉
             st.video(output_video_path, start_time=current_timestamp)
             
             st.markdown("<div class='mobile-tip'>手機版若無法下載，請點擊上方影片播放器右下角「⋮」或長按按鈕選擇「分享 / 下載」</div>", unsafe_allow_html=True)
             with open(output_video_path, 'rb') as f: st.download_button("下載影片", f.read(), "kuangyu_analysis.mp4", "video/mp4", type="primary", use_container_width=True)
 
-            # --- [v29] 關鍵影格精修實驗室 (完整還原 v27 功能 + v28 按鈕) ---
+            # --- [v31] 關鍵影格精修實驗室 (智慧記憶 + 自動跳轉) ---
             st.divider()
-            st.markdown("<div class='editor-container'><h3 style='margin:0; color:#FF4B4B;'>🔍 關鍵影格精修實驗室</h3><p style='color:#ccc; font-size:0.9rem;'>AI 抓不準？教練親手修！使用按鈕逐格尋找，微調關節位置。</p></div>", unsafe_allow_html=True)
+            st.markdown("<div class='editor-container'><h3 style='margin:0; color:#FF4B4B;'>🔍 關鍵影格精修實驗室</h3><p style='color:#ccc; font-size:0.9rem;'>AI 抓不準？教練親手修！智慧記憶調整，支援一鍵尋找最大/最小角度。</p></div>", unsafe_allow_html=True)
             
-            # 按鈕回調函式
-            def prev_frame():
-                st.session_state.editor_frame_idx = max(0, st.session_state.editor_frame_idx - 1)
-            def next_frame():
-                st.session_state.editor_frame_idx = min(meta['total_frames']-1, st.session_state.editor_frame_idx + 1)
+            # Helper function: Find frame with Max/Min angle for a specific joint pair
+            def find_extreme_frame(metric_key, find_max=True):
+                target_data = active_metrics[0] # Default first
+                # Try to find the metric in active_metrics
+                for m in active_metrics:
+                    if m[0] == metric_key: target_data = m; break
+                
+                idx_a, idx_b, idx_c = target_data[1], target_data[2], target_data[3]
+                best_frame = 0
+                extreme_val = -1.0 if find_max else 999.0
+                
+                for f_idx, frame_lm in enumerate(landmarks_data):
+                    if not frame_lm: continue
+                    try:
+                        # Reconstruct temporary landmark list
+                        pts = frame_lm
+                        p_a = [pts[idx_a.value][0], pts[idx_a.value][1]]
+                        p_b = [pts[idx_b.value][0], pts[idx_b.value][1]]
+                        p_c = [pts[idx_c.value][0], pts[idx_c.value][1]]
+                        ang = calculate_angle(p_a, p_b, p_c)
+                        if find_max:
+                            if ang > extreme_val: extreme_val = ang; best_frame = f_idx
+                        else:
+                            if ang < extreme_val: extreme_val = ang; best_frame = f_idx
+                    except: pass
+                st.session_state.editor_frame_idx = best_frame
+
+            # 按鈕回調
+            def prev_frame(): st.session_state.editor_frame_idx = max(0, st.session_state.editor_frame_idx - 1)
+            def next_frame(): st.session_state.editor_frame_idx = min(meta['total_frames']-1, st.session_state.editor_frame_idx + 1)
+            
+            # [v31] 智慧跳轉按鈕區
+            c_auto_1, c_auto_2 = st.columns(2)
+            with c_auto_1:
+                if st.button("⚡ 跳至最大膝角度 (伸直)", use_container_width=True):
+                    find_extreme_frame("L-Knee" if st.session_state.get('l_knee') else "R-Knee", True)
+            with c_auto_2:
+                if st.button("⚡ 跳至最小膝角度 (彎曲)", use_container_width=True):
+                    find_extreme_frame("L-Knee" if st.session_state.get('l_knee') else "R-Knee", False)
 
             # 導航控制區
             c_nav_1, c_nav_2, c_nav_3 = st.columns([1, 6, 1])
@@ -441,7 +474,6 @@ if uploaded_file:
             with c_nav_3:
                 st.button("下一格 ▶", on_click=next_frame, use_container_width=True, type="secondary")
             with c_nav_2:
-                # 顯示時間秒數
                 curr_sec = st.session_state.editor_frame_idx / meta['fps']
                 st.session_state.editor_frame_idx = st.slider(
                     f"⏱️ 時間軸: {curr_sec:.2f} 秒 (Frame {st.session_state.editor_frame_idx})", 
@@ -462,7 +494,6 @@ if uploaded_file:
                 raw_lm = landmarks_data[frame_idx_slider] if frame_idx_slider < len(landmarks_data) else None
                 
                 if raw_lm:
-                    # 關節映射表
                     joint_map = {
                         "左髖 (Left Hip)": 23, "左膝 (Left Knee)": 25, "左踝 (Left Ankle)": 27,
                         "右髖 (Right Hip)": 24, "右膝 (Right Knee)": 26, "右踝 (Right Ankle)": 28,
@@ -470,36 +501,53 @@ if uploaded_file:
                         "左腳尖 (L-Foot Index)": 31, "右腳尖 (R-Foot Index)": 32
                     }
                     
+                    # [v31] 確保當前影格的調整紀錄存在
+                    if frame_idx_slider not in st.session_state.keyframe_adjustments:
+                        st.session_state.keyframe_adjustments[frame_idx_slider] = {}
+                    
                     c1, c2 = st.columns([1, 2])
                     with c1:
                         target_joint = st.selectbox("1. 選擇要微調的關節", list(joint_map.keys()))
-                        joint_idx = joint_map[target_joint]
-                        orig_x = raw_lm[joint_idx][0]
-                        orig_y = raw_lm[joint_idx][1]
+                        joint_key = str(joint_map[target_joint]) # 使用 ID 作為 Key
+                        
+                        # 讀取該關節目前的 Offset (如果有的話)
+                        current_offsets = st.session_state.keyframe_adjustments[frame_idx_slider].get(joint_key, (0, 0))
                         
                         st.write("2. 微調控制器 (點擊調整)")
-                        offset_x = st.number_input("↔️ 左右微調 (X)", value=0, step=1, key=f"off_x_{frame_idx_slider}")
-                        offset_y = st.number_input("↕️ 上下微調 (Y)", value=0, step=1, key=f"off_y_{frame_idx_slider}")
-                        st.info("💡 調整數值後，右側畫面會即時更新！")
+                        # [v31] 使用 callback 更新 session_state，實現記憶功能
+                        def update_offset():
+                            # 這是為了讓 input 變化時能觸發儲存
+                            pass
 
-                    # 應用微調
+                        new_off_x = st.number_input("↔️ 左右微調 (X)", value=current_offsets[0], step=1, key=f"ox_{frame_idx_slider}", on_change=update_offset)
+                        new_off_y = st.number_input("↕️ 上下微調 (Y)", value=current_offsets[1], step=1, key=f"oy_{frame_idx_slider}", on_change=update_offset)
+                        
+                        # 存回 Session State
+                        st.session_state.keyframe_adjustments[frame_idx_slider][joint_key] = (new_off_x, new_off_y)
+                        
+                        st.info(f"💡 調整: {target_joint} ({new_off_x}, {new_off_y})")
+
+                    # [v31] 應用所有微調 (Apply ALL adjustments for this frame)
                     adjusted_lm = [list(pt) for pt in raw_lm]
-                    adj_x_norm = orig_x + (offset_x / target_w)
-                    adj_y_norm = orig_y + (offset_y / target_h)
-                    adjusted_lm[joint_idx][0] = adj_x_norm
-                    adjusted_lm[joint_idx][1] = adj_y_norm
+                    
+                    frame_adjustments = st.session_state.keyframe_adjustments[frame_idx_slider]
+                    for j_id_str, (off_x, off_y) in frame_adjustments.items():
+                        j_id = int(j_id_str)
+                        # 讀取原始
+                        orig_x, orig_y = raw_lm[j_id][0], raw_lm[j_id][1]
+                        # 加上偏移
+                        adjusted_lm[j_id][0] = orig_x + (off_x / target_w)
+                        adjusted_lm[j_id][1] = orig_y + (off_y / target_h)
                     
                     editor_landmarks = landmark_pb2.NormalizedLandmarkList()
                     for pt in adjusted_lm:
                         editor_landmarks.landmark.add(x=pt[0], y=pt[1], z=pt[2], visibility=pt[3])
                     
-                    # 繪製畫面
                     draw_skeleton_with_colored_sides(frame_ed, editor_landmarks)
                     lm_ed = editor_landmarks.landmark
                     cv2.putText(frame_ed, "LEFT SIDE", (20, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, LEFT_COLOR, 2, cv2.LINE_AA)
                     cv2.putText(frame_ed, "RIGHT SIDE", (meta['width'] - 135, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, RIGHT_COLOR, 2, cv2.LINE_AA)
                     
-                    # 重算角度
                     for label, idx_a, idx_b, idx_c, color, track_idx, show_trail_flag in active_metrics:
                         try:
                             angle = calculate_angle(
@@ -513,7 +561,7 @@ if uploaded_file:
                     frame_ed = add_watermark(frame_ed, logo_path="KUANGYU_logo_v.png")
                     
                     with c2:
-                        st.image(frame_ed, channels="BGR", caption=f"關鍵影格: {frame_idx_slider} ({curr_sec:.2f}s)", use_container_width=True)
+                        st.image(frame_ed, channels="BGR", caption=f"關鍵影格: {frame_idx_slider} ({curr_sec:.2f}s) - 已套用 {len(frame_adjustments)} 個修正", use_container_width=True)
                         is_success, buffer = cv2.imencode(".jpg", frame_ed)
                         if is_success:
                             st.download_button(
