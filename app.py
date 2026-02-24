@@ -20,6 +20,11 @@ SKELETON_COLOR = (255, 255, 255)   # 骨架連線 (純白)
 LINE_THICKNESS = 2    # 線條粗細
 DOT_RADIUS = 2        # 點點半徑
 
+# [v24 新增] 平滑係數 (0.0~1.0)
+# 數值越小越平滑(不抖)，但會有延遲感；數值越大反應越快但較抖。
+# 0.5 是一個完美的平衡點。
+SMOOTH_FACTOR = 0.5 
+
 # --- 1. 介面設定 ---
 st.set_page_config(
     page_title="光聿KUANGYU - AI 動作實驗室",
@@ -267,7 +272,7 @@ if uploaded_file:
         c1, c2, c3 = st.columns([1, 2, 1])
         with c2:
             if st.button("啟動 AI 智能掃描", type="primary"):
-                with st.spinner("正在建構 3D 骨架模型 (標準穩定模式)..."):
+                with st.spinner("正在建構 3D 骨架模型..."):
                     cap = cv2.VideoCapture(st.session_state['source_video_path'])
                     if not cap.isOpened(): st.error("影片格式錯誤")
                     else:
@@ -287,9 +292,7 @@ if uploaded_file:
                         temp_landmarks_data = []
                         bar = st.progress(0)
                         
-                        # [v23 穩定修復] 
-                        # 改回 model_complexity=1 以符合雲端伺服器權限
-                        # 維持 min_tracking_confidence=0.7 以確保精準度
+                        # [v24] 保持 model_complexity=1 以符合免費伺服器限制
                         with mp_pose.Pose(
                             min_detection_confidence=0.6, 
                             min_tracking_confidence=0.7, 
@@ -396,6 +399,9 @@ if uploaded_file:
             IS_FADE_MODE = "漸淡" in trail_mode
             MAX_TRAIL_LENGTH = 100 if IS_FADE_MODE else None
 
+            # [v24 新增] 用於存儲上一幀的平滑後座標
+            prev_frame_landmarks = None
+
             while cap.isOpened():
                 ret, frame = cap.read()
                 if not ret: break
@@ -408,10 +414,35 @@ if uploaded_file:
                 raw_lm_data = landmarks_data[frame_idx] if frame_idx < len(landmarks_data) else None
                 current_landmarks = None
                 
+                # [v24 關鍵] 手動 EMA 平滑演算法
                 if raw_lm_data:
                     current_landmarks = landmark_pb2.NormalizedLandmarkList()
-                    for lm_vals in raw_lm_data:
-                        current_landmarks.landmark.add(x=lm_vals[0], y=lm_vals[1], z=lm_vals[2], visibility=lm_vals[3])
+                    current_raw_points = []
+                    
+                    for i, lm_vals in enumerate(raw_lm_data):
+                        # lm_vals = [x, y, z, visibility]
+                        curr_x, curr_y = lm_vals[0], lm_vals[1]
+                        
+                        # 如果有上一幀的資料，就進行加權平均
+                        if prev_frame_landmarks and i < len(prev_frame_landmarks):
+                            prev_x, prev_y = prev_frame_landmarks[i]
+                            # 平滑公式: 新位置 = 舊位置 * 0.5 + 新偵測 * 0.5
+                            smooth_x = prev_x * SMOOTH_FACTOR + curr_x * (1 - SMOOTH_FACTOR)
+                            smooth_y = prev_y * SMOOTH_FACTOR + curr_y * (1 - SMOOTH_FACTOR)
+                        else:
+                            smooth_x, smooth_y = curr_x, curr_y
+                        
+                        # 儲存平滑後的點，供下一幀使用
+                        current_raw_points.append((smooth_x, smooth_y))
+                        
+                        # 寫入 NormalizedLandmarkList 供繪圖用
+                        current_landmarks.landmark.add(x=smooth_x, y=smooth_y, z=lm_vals[2], visibility=lm_vals[3])
+                    
+                    # 更新上一幀緩衝區
+                    prev_frame_landmarks = current_raw_points
+                else:
+                    # 如果這幀沒抓到人，重置平滑緩衝區，避免下一幀飛過來
+                    prev_frame_landmarks = None
 
                 if current_landmarks:
                     mp_drawing.draw_landmarks(frame, current_landmarks, mp_pose.POSE_CONNECTIONS,
