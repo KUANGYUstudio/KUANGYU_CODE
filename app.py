@@ -10,15 +10,16 @@ import gc
 from mediapipe.framework.formats import landmark_pb2
 
 # --- 0. 核心常數設定 ---
+# [v27 色彩升級]
 # OpenCV 色彩格式為 BGR (藍, 綠, 紅)
-DOT_COLOR = (180, 100, 240)        # 關節點點 (紮實粉紫)
-LEFT_LINE_COLOR = (255, 255, 0)    # 左側線條 (螢光青藍 Cyan in BGR)
-RIGHT_LINE_COLOR = (80, 200, 255)  # 右側線條 (飽和金黃 Yellow in BGR)
+DOT_COLOR_HEAD = (180, 100, 240)   # 頭部/軀幹中心點 (紮實粉紫)
+LEFT_COLOR = (255, 255, 0)         # 左側 (螢光青藍 Cyan)
+RIGHT_COLOR = (80, 200, 255)       # 右側 (飽和金黃 Yellow)
 SKELETON_COLOR = (255, 255, 255)   # 骨架連線 (純白)
 
 # [尺寸鎖定]
 LINE_THICKNESS = 2    # 線條粗細
-DOT_RADIUS = 2        # 點點半徑
+DOT_RADIUS = 3        # [v27] 點點稍微加大一點，更清楚
 
 # [平滑係數]
 SMOOTH_FACTOR = 0.5 
@@ -248,6 +249,39 @@ def draw_dashboard(image, label, angle, x, y, color):
     cv2.putText(image, f"{int(angle)}", (x + 60, y + 5), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2, cv2.LINE_AA)
     cv2.circle(image, (x + 100, y - 5), 2, (255, 255, 255), 1)
 
+# [v27 新增] 自定義骨架繪製函式 (左右分色)
+def draw_skeleton_with_colored_sides(image, landmarks):
+    h, w = image.shape[:2]
+    # 1. 繪製骨架連線 (白色)
+    mp_drawing.draw_landmarks(
+        image, 
+        landmarks, 
+        mp_pose.POSE_CONNECTIONS,
+        landmark_drawing_spec=None, # 不使用預設點點
+        connection_drawing_spec=mp_drawing.DrawingSpec(color=SKELETON_COLOR, thickness=LINE_THICKNESS, circle_radius=1)
+    )
+    
+    # 2. 繪製左右分色的點點
+    # 左側關鍵點 ID (奇數)
+    left_indices = {11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31}
+    # 右側關鍵點 ID (偶數)
+    right_indices = {12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32}
+    
+    for idx, lm in enumerate(landmarks.landmark):
+        if lm.visibility < 0.5: continue # 信心度太低不畫
+        
+        cx, cy = int(lm.x * w), int(lm.y * h)
+        
+        if idx in left_indices:
+            color = LEFT_COLOR
+        elif idx in right_indices:
+            color = RIGHT_COLOR
+        else:
+            color = DOT_COLOR_HEAD # 鼻子、眼睛、耳朵等
+            
+        cv2.circle(image, (cx, cy), DOT_RADIUS, color, -1) # 實心圓
+        cv2.circle(image, (cx, cy), DOT_RADIUS+1, (255, 255, 255), 1) # 白色描邊，增加對比度
+
 # --- Session State ---
 if 'analyzed_data' not in st.session_state: st.session_state['analyzed_data'] = [] 
 if 'video_meta' not in st.session_state: st.session_state['video_meta'] = {}
@@ -440,9 +474,8 @@ if uploaded_file:
                     prev_frame_landmarks = None
 
                 if current_landmarks:
-                    mp_drawing.draw_landmarks(frame, current_landmarks, mp_pose.POSE_CONNECTIONS,
-                        mp_drawing.DrawingSpec(color=DOT_COLOR, thickness=DOT_RADIUS, circle_radius=DOT_RADIUS),
-                        mp_drawing.DrawingSpec(color=SKELETON_COLOR, thickness=LINE_THICKNESS, circle_radius=2))
+                    # [v27] 改用自定義繪圖，實現點點左右分色
+                    draw_skeleton_with_colored_sides(frame, current_landmarks)
                     lm = current_landmarks.landmark
                     
                     cv2.putText(frame, "LEFT SIDE", (20, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, LEFT_LINE_COLOR, 2, cv2.LINE_AA)
@@ -565,10 +598,8 @@ if uploaded_file:
                     for pt in adjusted_lm:
                         editor_landmarks.landmark.add(x=pt[0], y=pt[1], z=pt[2], visibility=pt[3])
                     
-                    # 繪製編輯後的畫面
-                    mp_drawing.draw_landmarks(frame_ed, editor_landmarks, mp_pose.POSE_CONNECTIONS,
-                        mp_drawing.DrawingSpec(color=DOT_COLOR, thickness=DOT_RADIUS, circle_radius=DOT_RADIUS),
-                        mp_drawing.DrawingSpec(color=SKELETON_COLOR, thickness=LINE_THICKNESS, circle_radius=2))
+                    # [v27] 編輯器也套用左右分色
+                    draw_skeleton_with_colored_sides(frame_ed, editor_landmarks)
                     
                     # 重新計算並繪製儀表板
                     lm_ed = editor_landmarks.landmark
