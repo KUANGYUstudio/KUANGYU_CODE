@@ -20,9 +20,7 @@ SKELETON_COLOR = (255, 255, 255)   # 骨架連線 (純白)
 LINE_THICKNESS = 2    # 線條粗細
 DOT_RADIUS = 2        # 點點半徑
 
-# [v24 新增] 平滑係數 (0.0~1.0)
-# 數值越小越平滑(不抖)，但會有延遲感；數值越大反應越快但較抖。
-# 0.5 是一個完美的平衡點。
+# [平滑係數]
 SMOOTH_FACTOR = 0.5 
 
 # --- 1. 介面設定 ---
@@ -150,6 +148,15 @@ st.markdown("""
         text-align: center;
         border: 1px solid #ddd;
     }
+    
+    .editor-container {
+        background-color: #262730;
+        color: white;
+        padding: 20px;
+        border-radius: 12px;
+        margin-top: 20px;
+        border: 1px solid #444;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -247,8 +254,10 @@ if 'video_meta' not in st.session_state: st.session_state['video_meta'] = {}
 if 'source_video_path' not in st.session_state: st.session_state['source_video_path'] = None
 if 'current_file_name' not in st.session_state: st.session_state['current_file_name'] = ""
 if 'is_processed' not in st.session_state: st.session_state['is_processed'] = False
+
+# [v26] 初始化：預設開啟所有關節角度 (True)，軌跡維持關閉 (False)
 for part in ['l_hip', 'l_knee', 'l_ankle', 'r_hip', 'r_knee', 'r_ankle']:
-    if part not in st.session_state: st.session_state[part] = False 
+    if part not in st.session_state: st.session_state[part] = True 
     if f"t_{part}" not in st.session_state: st.session_state[f"t_{part}"] = False
 
 # --- Main Logic ---
@@ -292,7 +301,7 @@ if uploaded_file:
                         temp_landmarks_data = []
                         bar = st.progress(0)
                         
-                        # [v24] 保持 model_complexity=1 以符合免費伺服器限制
+                        # [v25/26] 保持標準穩定設定
                         with mp_pose.Pose(
                             min_detection_confidence=0.6, 
                             min_tracking_confidence=0.7, 
@@ -340,24 +349,24 @@ if uploaded_file:
                 st.markdown("<span class='panel-header' style='border-color: #00FFFF;'>左側數據 (Left - Cyan)</span>", unsafe_allow_html=True)
                 l_c1, l_c2 = st.columns(2)
                 with l_c1:
-                    l_hip = st.checkbox("左髖", value=st.session_state.get('l_hip', False))
+                    l_hip = st.checkbox("左髖", value=st.session_state.get('l_hip', True))
                     l_knee = st.checkbox("左膝", value=st.session_state.get('l_knee', True))
-                    l_ankle = st.checkbox("左踝", value=st.session_state.get('l_ankle', False))
+                    l_ankle = st.checkbox("左踝", value=st.session_state.get('l_ankle', True))
                 with l_c2:
                     t_l_hip = st.checkbox("軌跡", value=st.session_state.get('t_l_hip', False), key="t_l_hip_f")
-                    t_l_knee = st.checkbox("軌跡", value=st.session_state.get('t_l_knee', True), key="t_l_knee_f")
+                    t_l_knee = st.checkbox("軌跡", value=st.session_state.get('t_l_knee', False), key="t_l_knee_f")
                     t_l_ankle = st.checkbox("軌跡", value=st.session_state.get('t_l_ankle', False), key="t_l_ankle_f")
                 
                 st.markdown("<br>", unsafe_allow_html=True)
                 st.markdown("<span class='panel-header' style='border-color: #FFC850;'>右側數據 (Right - Yellow)</span>", unsafe_allow_html=True)
                 r_c1, r_c2 = st.columns(2)
                 with r_c1:
-                    r_hip = st.checkbox("右髖", value=st.session_state.get('r_hip', False))
+                    r_hip = st.checkbox("右髖", value=st.session_state.get('r_hip', True))
                     r_knee = st.checkbox("右膝", value=st.session_state.get('r_knee', True))
-                    r_ankle = st.checkbox("右踝", value=st.session_state.get('r_ankle', False))
+                    r_ankle = st.checkbox("右踝", value=st.session_state.get('r_ankle', True))
                 with r_c2:
                     t_r_hip = st.checkbox("軌跡", value=st.session_state.get('t_r_hip', False), key="t_r_hip_f")
-                    t_r_knee = st.checkbox("軌跡", value=st.session_state.get('t_r_knee', True), key="t_r_knee_f")
+                    t_r_knee = st.checkbox("軌跡", value=st.session_state.get('t_r_knee', False), key="t_r_knee_f")
                     t_r_ankle = st.checkbox("軌跡", value=st.session_state.get('t_r_ankle', False), key="t_r_ankle_f")
                 
                 st.markdown("<br>", unsafe_allow_html=True)
@@ -398,8 +407,6 @@ if uploaded_file:
             progress_bar = st.progress(0)
             IS_FADE_MODE = "漸淡" in trail_mode
             MAX_TRAIL_LENGTH = 100 if IS_FADE_MODE else None
-
-            # [v24 新增] 用於存儲上一幀的平滑後座標
             prev_frame_landmarks = None
 
             while cap.isOpened():
@@ -414,34 +421,22 @@ if uploaded_file:
                 raw_lm_data = landmarks_data[frame_idx] if frame_idx < len(landmarks_data) else None
                 current_landmarks = None
                 
-                # [v24 關鍵] 手動 EMA 平滑演算法
+                # EMA 平滑演算法
                 if raw_lm_data:
                     current_landmarks = landmark_pb2.NormalizedLandmarkList()
                     current_raw_points = []
-                    
                     for i, lm_vals in enumerate(raw_lm_data):
-                        # lm_vals = [x, y, z, visibility]
                         curr_x, curr_y = lm_vals[0], lm_vals[1]
-                        
-                        # 如果有上一幀的資料，就進行加權平均
                         if prev_frame_landmarks and i < len(prev_frame_landmarks):
                             prev_x, prev_y = prev_frame_landmarks[i]
-                            # 平滑公式: 新位置 = 舊位置 * 0.5 + 新偵測 * 0.5
                             smooth_x = prev_x * SMOOTH_FACTOR + curr_x * (1 - SMOOTH_FACTOR)
                             smooth_y = prev_y * SMOOTH_FACTOR + curr_y * (1 - SMOOTH_FACTOR)
                         else:
                             smooth_x, smooth_y = curr_x, curr_y
-                        
-                        # 儲存平滑後的點，供下一幀使用
                         current_raw_points.append((smooth_x, smooth_y))
-                        
-                        # 寫入 NormalizedLandmarkList 供繪圖用
                         current_landmarks.landmark.add(x=smooth_x, y=smooth_y, z=lm_vals[2], visibility=lm_vals[3])
-                    
-                    # 更新上一幀緩衝區
                     prev_frame_landmarks = current_raw_points
                 else:
-                    # 如果這幀沒抓到人，重置平滑緩衝區，避免下一幀飛過來
                     prev_frame_landmarks = None
 
                 if current_landmarks:
@@ -503,3 +498,110 @@ if uploaded_file:
             st.video(output_video_path)
             st.markdown("<div class='mobile-tip'>手機版若無法下載，請點擊上方影片播放器右下角「⋮」或長按按鈕選擇「分享 / 下載」</div>", unsafe_allow_html=True)
             with open(output_video_path, 'rb') as f: st.download_button("下載影片", f.read(), "kuangyu_analysis.mp4", "video/mp4", type="primary", use_container_width=True)
+
+            # --- [v25] 關鍵影格精修實驗室 ---
+            st.divider()
+            st.markdown("<div class='editor-container'><h3 style='margin:0; color:#FF4B4B;'>🔍 關鍵影格精修實驗室</h3><p style='color:#ccc; font-size:0.9rem;'>AI 抓不準？教練親手修！選擇關鍵動作瞬間，微調關節位置，生成完美數據圖。</p></div>", unsafe_allow_html=True)
+            
+            if 'editor_frame_idx' not in st.session_state: st.session_state['editor_frame_idx'] = 0
+            
+            # 1. 影格選擇器
+            frame_idx_slider = st.slider("選擇關鍵影格 (Frame Index)", 0, meta['total_frames']-1, 0)
+            
+            # 讀取指定影格
+            cap_editor = cv2.VideoCapture(st.session_state['source_video_path'])
+            cap_editor.set(cv2.CAP_PROP_POS_FRAMES, frame_idx_slider)
+            ret_ed, frame_ed = cap_editor.read()
+            cap_editor.release()
+            
+            if ret_ed:
+                # 統一尺寸
+                target_w, target_h = meta['width'], meta['height']
+                frame_ed = cv2.resize(frame_ed, (target_w, target_h), interpolation=cv2.INTER_AREA)
+                
+                # 取得該幀的原始 AI 數據
+                raw_lm = landmarks_data[frame_idx_slider] if frame_idx_slider < len(landmarks_data) else None
+                
+                if raw_lm:
+                    # 定義關節映射
+                    joint_map = {
+                        "左髖 (Left Hip)": 23, "左膝 (Left Knee)": 25, "左踝 (Left Ankle)": 27,
+                        "右髖 (Right Hip)": 24, "右膝 (Right Knee)": 26, "右踝 (Right Ankle)": 28,
+                        "左肩 (Left Shoulder)": 11, "右肩 (Right Shoulder)": 12,
+                        "左腳尖 (L-Foot Index)": 31, "右腳尖 (R-Foot Index)": 32
+                    }
+                    
+                    c1, c2 = st.columns([1, 2])
+                    with c1:
+                        target_joint = st.selectbox("選擇要微調的關節", list(joint_map.keys()))
+                        joint_idx = joint_map[target_joint]
+                        
+                        # 取得原始座標 (Normalized)
+                        orig_x = raw_lm[joint_idx][0]
+                        orig_y = raw_lm[joint_idx][1]
+                        
+                        # 微調控制項 (單位：像素)
+                        # 我們使用 offset 方式，避免數值太複雜
+                        st.write("📍 **微調控制器 (像素偏移)**")
+                        offset_x = st.number_input("↔️ 水平微調 (X)", value=0, step=1, key=f"off_x_{frame_idx_slider}")
+                        offset_y = st.number_input("↕️ 垂直微調 (Y)", value=0, step=1, key=f"off_y_{frame_idx_slider}")
+                        
+                        st.info("💡 調整後，右側畫面與角度數據會即時更新！")
+
+                    # 應用微調
+                    # 複製一份數據以免動到原始資料
+                    adjusted_lm = [list(pt) for pt in raw_lm]
+                    
+                    # 將 Normalized 轉為 Pixel -> 加 Offset -> 轉回 Normalized (為了給 draw_landmarks 用)
+                    # 其實直接改 Normalized 比較快： offset / width
+                    adj_x_norm = orig_x + (offset_x / target_w)
+                    adj_y_norm = orig_y + (offset_y / target_h)
+                    
+                    adjusted_lm[joint_idx][0] = adj_x_norm
+                    adjusted_lm[joint_idx][1] = adj_y_norm
+                    
+                    # 重建 Protobuf 物件以供繪圖
+                    editor_landmarks = landmark_pb2.NormalizedLandmarkList()
+                    for pt in adjusted_lm:
+                        editor_landmarks.landmark.add(x=pt[0], y=pt[1], z=pt[2], visibility=pt[3])
+                    
+                    # 繪製編輯後的畫面
+                    mp_drawing.draw_landmarks(frame_ed, editor_landmarks, mp_pose.POSE_CONNECTIONS,
+                        mp_drawing.DrawingSpec(color=DOT_COLOR, thickness=DOT_RADIUS, circle_radius=DOT_RADIUS),
+                        mp_drawing.DrawingSpec(color=SKELETON_COLOR, thickness=LINE_THICKNESS, circle_radius=2))
+                    
+                    # 重新計算並繪製儀表板
+                    lm_ed = editor_landmarks.landmark
+                    cv2.putText(frame_ed, "LEFT SIDE", (20, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, LEFT_LINE_COLOR, 2, cv2.LINE_AA)
+                    cv2.putText(frame_ed, "RIGHT SIDE", (meta['width'] - 135, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, RIGHT_LINE_COLOR, 2, cv2.LINE_AA)
+                    
+                    for label, idx_a, idx_b, idx_c, color, track_idx, show_trail_flag in active_metrics:
+                        try:
+                            # 使用調整後的座標計算角度
+                            angle = calculate_angle(
+                                [lm_ed[idx_a.value].x, lm_ed[idx_a.value].y], 
+                                [lm_ed[idx_b.value].x, lm_ed[idx_b.value].y], 
+                                [lm_ed[idx_c.value].x, lm_ed[idx_c.value].y]
+                            )
+                            if label in dashboard_positions: draw_dashboard(frame_ed, label, angle, *dashboard_positions[label], color)
+                        except: pass
+                    
+                    # 加上 Logo
+                    frame_ed = add_watermark(frame_ed, logo_path="KUANGYU_logo_v.png")
+                    
+                    # 顯示
+                    with c2:
+                        st.image(frame_ed, channels="BGR", caption=f"關鍵影格: {frame_idx_slider} (已套用微調)", use_container_width=True)
+                        
+                        # 下載按鈕
+                        is_success, buffer = cv2.imencode(".jpg", frame_ed)
+                        if is_success:
+                            st.download_button(
+                                label="⬇️ 下載此張精修截圖 (JPG)",
+                                data=buffer.tobytes(),
+                                file_name=f"kuangyu_keyframe_{frame_idx_slider}.jpg",
+                                mime="image/jpeg",
+                                type="primary"
+                            )
+                else:
+                    st.warning("⚠️ 此影格 AI 未偵測到完整骨架，無法進行微調。請嘗試選擇前後的影格。")
