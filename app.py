@@ -65,7 +65,7 @@ st.markdown("""
         color: white; box-shadow: 0 4px 6px rgba(255, 75, 75, 0.2); width: 100%; border: none;
     }
     
-    /* [v28] 導航按鈕樣式 (上一格/下一格) */
+    /* 導航按鈕樣式 */
     div.stButton > button[kind="secondary"] {
         background-color: #3E3E42; color: white; border: 1px solid #555;
     }
@@ -173,25 +173,19 @@ def draw_dashboard(image, label, angle, x, y, color):
 
 def draw_skeleton_with_colored_sides(image, landmarks):
     h, w = image.shape[:2]
-    # 繪製白色骨架連線
     mp_drawing.draw_landmarks(
         image, landmarks, mp_pose.POSE_CONNECTIONS,
         landmark_drawing_spec=None,
         connection_drawing_spec=mp_drawing.DrawingSpec(color=SKELETON_COLOR, thickness=LINE_THICKNESS, circle_radius=1)
     )
-    # 定義左右側索引
     left_indices = {11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31}
     right_indices = {12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32}
-    
-    # 繪製分色點點
     for idx, lm in enumerate(landmarks.landmark):
         if lm.visibility < 0.5: continue
         cx, cy = int(lm.x * w), int(lm.y * h)
-        
         if idx in left_indices: color = LEFT_COLOR
         elif idx in right_indices: color = RIGHT_COLOR
         else: color = DOT_COLOR_HEAD
-        
         cv2.circle(image, (cx, cy), DOT_RADIUS, color, -1)
         cv2.circle(image, (cx, cy), DOT_RADIUS+1, (255, 255, 255), 1)
 
@@ -418,7 +412,15 @@ if uploaded_file:
             
             status_text.empty()
             st.success("分析完成")
-            st.video(output_video_path)
+            
+            # [v30] 影音同步連動：影片播放器跳轉
+            current_timestamp = 0
+            if meta['fps'] > 0:
+                current_timestamp = st.session_state.editor_frame_idx / meta['fps']
+            
+            # 將 start_time 參數傳入 st.video，實現跳轉
+            st.video(output_video_path, start_time=current_timestamp)
+            
             st.markdown("<div class='mobile-tip'>手機版若無法下載，請點擊上方影片播放器右下角「⋮」或長按按鈕選擇「分享 / 下載」</div>", unsafe_allow_html=True)
             with open(output_video_path, 'rb') as f: st.download_button("下載影片", f.read(), "kuangyu_analysis.mp4", "video/mp4", type="primary", use_container_width=True)
 
